@@ -15,6 +15,7 @@ use covenant_llm::{
     ExplainGenerator, ExplanationCache, LlmClient,
     Verbosity, ExplainFormat, format_explanation,
 };
+use covenant_requirements::{validate_program, format_report, ReportFormat, filter_uncovered, has_coverage_errors};
 
 #[derive(Parser)]
 #[command(name = "covenant")]
@@ -38,6 +39,9 @@ enum Commands {
     Check {
         /// Input file(s)
         files: Vec<PathBuf>,
+        /// Also validate requirement coverage
+        #[arg(long)]
+        requirements: bool,
     },
     /// Compile a file to WASM
     Compile {
@@ -46,6 +50,9 @@ enum Commands {
         /// Output file
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Target platform (browser, node, wasi). Defaults to node.
+        #[arg(long, default_value = "node")]
+        target: String,
     },
     /// Query the codebase
     Query {
@@ -82,6 +89,23 @@ enum Commands {
         #[arg(long)]
         violations_only: bool,
     },
+    /// Analyze requirement coverage
+    Requirements {
+        /// Input file(s) to analyze
+        files: Vec<PathBuf>,
+        /// Output format (text, json, markdown)
+        #[arg(long, default_value = "text")]
+        report: String,
+        /// Show only uncovered requirements
+        #[arg(long)]
+        uncovered_only: bool,
+        /// Exit with error if coverage is below threshold (0-100)
+        #[arg(long)]
+        min_coverage: Option<f64>,
+        /// Treat all uncovered requirements as errors (regardless of priority)
+        #[arg(long)]
+        strict: bool,
+    },
     /// Interactive REPL
     Repl,
 }
@@ -92,14 +116,17 @@ async fn main() {
 
     match cli.command {
         Commands::Parse { file, pretty } => cmd_parse(&file, pretty),
-        Commands::Check { files } => cmd_check(&files),
-        Commands::Compile { file, output } => cmd_compile(&file, output),
+        Commands::Check { files, requirements } => cmd_check(&files, requirements),
+        Commands::Compile { file, output, target } => cmd_compile(&file, output, &target),
         Commands::Query { files, query } => cmd_query(&files, &query),
         Commands::Info { file } => cmd_info(&file),
         Commands::Explain { file, format, verbosity, no_cache } => {
             cmd_explain(&file, &format, &verbosity, no_cache).await;
         }
         Commands::Effects { files, violations_only } => cmd_effects(&files, violations_only),
+        Commands::Requirements { files, report, uncovered_only, min_coverage, strict } => {
+            cmd_requirements(&files, &report, uncovered_only, min_coverage, strict);
+        }
         Commands::Repl => cmd_repl(),
     }
 }
@@ -129,7 +156,7 @@ fn cmd_parse(file: &PathBuf, pretty: bool) {
     }
 }
 
-fn cmd_check(files: &[PathBuf]) {
+fn cmd_check(files: &[PathBuf], validate_requirements: bool) {
     let mut all_ok = true;
 
     for file in files {
@@ -171,13 +198,49 @@ fn cmd_check(files: &[PathBuf]) {
                             .filter(|s| result.effects.is_pure(s.id))
                             .count();
                         let symbol_count = symbol_result.graph.len();
-                        println!(
-                            "✓ {} - {} symbols, {} functions ({} pure)",
-                            file.display(),
-                            symbol_count,
-                            fn_count,
-                            pure_count
-                        );
+
+                        // Phase 5: Requirement validation (optional)
+                        let req_info = if validate_requirements {
+                            let req_report = validate_program(&program, None);
+                            let has_errors = has_coverage_errors(&req_report);
+                            if has_errors {
+                                all_ok = false;
+                            }
+                            Some((req_report.summary.coverage_percent, has_errors))
+                        } else {
+                            None
+                        };
+
+                        // Print status line
+                        if let Some((coverage, has_errors)) = req_info {
+                            if has_errors {
+                                eprintln!(
+                                    "✗ {} - {} symbols, {} functions ({} pure), requirements: {:.0}% coverage (errors)",
+                                    file.display(),
+                                    symbol_count,
+                                    fn_count,
+                                    pure_count,
+                                    coverage
+                                );
+                            } else {
+                                println!(
+                                    "✓ {} - {} symbols, {} functions ({} pure), requirements: {:.0}% coverage",
+                                    file.display(),
+                                    symbol_count,
+                                    fn_count,
+                                    pure_count,
+                                    coverage
+                                );
+                            }
+                        } else {
+                            println!(
+                                "✓ {} - {} symbols, {} functions ({} pure)",
+                                file.display(),
+                                symbol_count,
+                                fn_count,
+                                pure_count
+                            );
+                        }
                     }
                     Err(errors) => {
                         eprintln!("✗ {} - {} type errors:", file.display(), errors.len());
@@ -200,7 +263,14 @@ fn cmd_check(files: &[PathBuf]) {
     }
 }
 
-fn cmd_compile(file: &PathBuf, output: Option<PathBuf>) {
+fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str) {
+    // Validate target platform
+    let valid_targets = ["browser", "node", "wasi"];
+    if !valid_targets.contains(&target) {
+        eprintln!("Invalid target '{}'. Valid targets: browser, node, wasi", target);
+        std::process::exit(1);
+    }
+
     let source = match fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
@@ -472,6 +542,79 @@ fn cmd_effects(files: &[PathBuf], violations_only: bool) {
             println!("No effect violations found");
         } else {
             eprintln!("{} effect violation(s) found", total_violations);
+        }
+    }
+
+    if !all_ok {
+        std::process::exit(1);
+    }
+}
+
+fn cmd_requirements(
+    files: &[PathBuf],
+    format_str: &str,
+    uncovered_only: bool,
+    min_coverage: Option<f64>,
+    strict: bool,
+) {
+    use covenant_requirements::ValidatorConfig;
+
+    let format: ReportFormat = format_str.parse().unwrap_or(ReportFormat::Text);
+    let mut all_ok = true;
+
+    // Use strict config if requested (all uncovered = error)
+    let config = if strict {
+        ValidatorConfig::strict()
+    } else {
+        ValidatorConfig::default_config()
+    };
+
+    for file in files {
+        let source = match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading {}: {}", file.display(), e);
+                all_ok = false;
+                continue;
+            }
+        };
+
+        let program = match parse(&source) {
+            Ok(p) => p,
+            Err(e) => {
+                report_parse_error(&source, file, &e);
+                all_ok = false;
+                continue;
+            }
+        };
+
+        let report = validate_program(&program, Some(config.clone()));
+
+        // Apply uncovered filter if requested
+        let report = if uncovered_only {
+            filter_uncovered(&report)
+        } else {
+            report
+        };
+
+        // Output the report
+        println!("{}", format_report(&report, format));
+
+        // Check for errors
+        if has_coverage_errors(&report) {
+            all_ok = false;
+        }
+
+        // Check coverage threshold
+        if let Some(threshold) = min_coverage {
+            if report.summary.coverage_percent < threshold {
+                eprintln!(
+                    "Coverage {:.1}% is below threshold {:.1}%",
+                    report.summary.coverage_percent,
+                    threshold
+                );
+                all_ok = false;
+            }
         }
     }
 

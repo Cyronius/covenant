@@ -1,0 +1,82 @@
+// Example: Platform abstraction for cross-platform extern bindings
+// Demonstrates extern-abstract and extern-impl snippets
+
+// ===== Abstract Declaration =====
+// Declares a console.println function that must have implementations
+// for all listed platforms
+
+snippet id="console.println" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="println"
+    param name="msg" type="String"
+    returns type="Unit"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+end
+
+// ===== Platform Implementations =====
+
+// Browser implementation - uses window.console.log
+snippet id="console.println.browser" kind="extern-impl" implements="console.println" platform="browser"
+
+metadata
+  contract="@browser/console.log"
+end
+
+end
+
+// Node.js implementation - uses process.stdout
+snippet id="console.println.node" kind="extern-impl" implements="console.println" platform="node"
+
+metadata
+  contract="console.log@1"
+end
+
+end
+
+// WASI implementation - uses WASI io interface
+snippet id="console.println.wasi" kind="extern-impl" implements="console.println" platform="wasi"
+
+metadata
+  contract="wasi:io/print"
+end
+
+end
+
+// ===== Usage Example =====
+// User code always calls the abstract ID, compiler selects impl
+
+snippet id="app.greet" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="greet"
+    param name="name" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="console.println"
+    arg name="msg" from="name"
+    as="_"
+  end
+end
+
+end

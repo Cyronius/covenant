@@ -17,6 +17,10 @@ pub enum SymbolKind {
     Module,
     Database,
     Extern,
+    /// Platform-abstract extern declaration
+    ExternAbstract,
+    /// Platform-specific extern implementation
+    ExternImpl,
     Test,
     Data,
 }
@@ -30,6 +34,8 @@ impl From<SnippetKind> for SymbolKind {
             SnippetKind::Module => SymbolKind::Module,
             SnippetKind::Database => SymbolKind::Database,
             SnippetKind::Extern => SymbolKind::Extern,
+            SnippetKind::ExternAbstract => SymbolKind::ExternAbstract,
+            SnippetKind::ExternImpl => SymbolKind::ExternImpl,
             SnippetKind::Test => SymbolKind::Test,
             SnippetKind::Data => SymbolKind::Data,
         }
@@ -89,6 +95,16 @@ pub struct SymbolInfo {
 
     /// Unresolved type references (for deferred error handling)
     pub unresolved_references: HashSet<String>,
+
+    // === Platform Abstraction (for extern-abstract and extern-impl) ===
+    /// For extern-abstract: the platforms this snippet declares support for
+    pub platforms: Vec<String>,
+
+    /// For extern-impl: the abstract snippet ID this implements
+    pub implements: Option<String>,
+
+    /// For extern-impl: the target platform
+    pub target_platform: Option<String>,
 }
 
 impl SymbolInfo {
@@ -108,12 +124,18 @@ impl SymbolInfo {
             relations_from: Vec::new(),
             unresolved_calls: HashSet::new(),
             unresolved_references: HashSet::new(),
+            platforms: Vec::new(),
+            implements: None,
+            target_platform: None,
         }
     }
 
     /// Check if this symbol is a callable (function or extern)
     pub fn is_callable(&self) -> bool {
-        matches!(self.kind, SymbolKind::Function | SymbolKind::Extern)
+        matches!(
+            self.kind,
+            SymbolKind::Function | SymbolKind::Extern | SymbolKind::ExternAbstract
+        )
     }
 
     /// Check if this symbol is a type definition

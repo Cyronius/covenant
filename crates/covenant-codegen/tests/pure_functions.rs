@@ -367,3 +367,698 @@ end
     assert_eq!(factorial.call(&mut store, 1).unwrap(), 1);
     assert_eq!(factorial.call(&mut store, 5).unwrap(), 120);
 }
+
+// ============================================================================
+// TDD Tests - Features not yet implemented
+// These tests define expected behavior for future implementation.
+// Tests in this section MUST FAIL until the feature is implemented.
+// ============================================================================
+
+// === Cross-Function Call Tests (FAILS: UndefinedFunction) ===
+
+#[test]
+fn test_compile_function_calls_function() {
+    // TDD: Cross-function calls - currently fails with UndefinedFunction
+    let source = r#"
+snippet id="math.double" kind="fn"
+signature
+  fn name="double"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=mul
+    input var="x"
+    input lit=2
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+
+snippet id="math.quadruple" kind="fn"
+signature
+  fn name="quadruple"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="call"
+    fn="math.double"
+    arg name="x" from="x"
+    as="doubled"
+  end
+  step id="s2" kind="call"
+    fn="math.double"
+    arg name="x" from="doubled"
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let quadruple = instance
+        .get_typed_func::<i64, i64>(&mut store, "quadruple")
+        .expect("Failed to get 'quadruple' function");
+    assert_eq!(quadruple.call(&mut store, 5).unwrap(), 20);
+    assert_eq!(quadruple.call(&mut store, 0).unwrap(), 0);
+    assert_eq!(quadruple.call(&mut store, -3).unwrap(), -12);
+}
+
+// === Boolean Operation Tests (FAILS: Bool type uses i32, codegen uses i64) ===
+
+#[test]
+fn test_compile_boolean_and() {
+    let source = r#"
+snippet id="logic.and" kind="fn"
+signature
+  fn name="and_fn"
+    param name="a" type="Bool"
+    param name="b" type="Bool"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=and
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let and_fn = instance
+        .get_typed_func::<(i32, i32), i32>(&mut store, "and_fn")
+        .expect("Failed to get 'and_fn' function");
+    assert_eq!(and_fn.call(&mut store, (1, 1)).unwrap(), 1);
+    assert_eq!(and_fn.call(&mut store, (1, 0)).unwrap(), 0);
+    assert_eq!(and_fn.call(&mut store, (0, 1)).unwrap(), 0);
+    assert_eq!(and_fn.call(&mut store, (0, 0)).unwrap(), 0);
+}
+
+#[test]
+fn test_compile_boolean_or() {
+    let source = r#"
+snippet id="logic.or" kind="fn"
+signature
+  fn name="or_fn"
+    param name="a" type="Bool"
+    param name="b" type="Bool"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=or
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let or_fn = instance
+        .get_typed_func::<(i32, i32), i32>(&mut store, "or_fn")
+        .expect("Failed to get 'or_fn' function");
+    assert_eq!(or_fn.call(&mut store, (1, 1)).unwrap(), 1);
+    assert_eq!(or_fn.call(&mut store, (1, 0)).unwrap(), 1);
+    assert_eq!(or_fn.call(&mut store, (0, 1)).unwrap(), 1);
+    assert_eq!(or_fn.call(&mut store, (0, 0)).unwrap(), 0);
+}
+
+#[test]
+fn test_compile_boolean_not() {
+    let source = r#"
+snippet id="logic.not" kind="fn"
+signature
+  fn name="not_fn"
+    param name="a" type="Bool"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=not
+    input var="a"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let not_fn = instance
+        .get_typed_func::<i32, i32>(&mut store, "not_fn")
+        .expect("Failed to get 'not_fn' function");
+    assert_eq!(not_fn.call(&mut store, 1).unwrap(), 0);
+    assert_eq!(not_fn.call(&mut store, 0).unwrap(), 1);
+}
+
+// === Comparison Operation Tests (FAILS: Returns Bool/i32 but codegen returns i64) ===
+
+#[test]
+fn test_compile_comparison_equals() {
+    let source = r#"
+snippet id="cmp.eq" kind="fn"
+signature
+  fn name="eq"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=equals
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let eq = instance
+        .get_typed_func::<(i64, i64), i32>(&mut store, "eq")
+        .expect("Failed to get 'eq' function");
+    assert_eq!(eq.call(&mut store, (5, 5)).unwrap(), 1);
+    assert_eq!(eq.call(&mut store, (5, 3)).unwrap(), 0);
+    assert_eq!(eq.call(&mut store, (0, 0)).unwrap(), 1);
+}
+
+#[test]
+fn test_compile_comparison_less() {
+    let source = r#"
+snippet id="cmp.less" kind="fn"
+signature
+  fn name="less"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=less
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let less = instance
+        .get_typed_func::<(i64, i64), i32>(&mut store, "less")
+        .expect("Failed to get 'less' function");
+    assert_eq!(less.call(&mut store, (3, 5)).unwrap(), 1);
+    assert_eq!(less.call(&mut store, (5, 3)).unwrap(), 0);
+    assert_eq!(less.call(&mut store, (5, 5)).unwrap(), 0);
+}
+
+#[test]
+fn test_compile_comparison_greater() {
+    let source = r#"
+snippet id="cmp.greater" kind="fn"
+signature
+  fn name="greater"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Bool"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=greater
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let greater = instance
+        .get_typed_func::<(i64, i64), i32>(&mut store, "greater")
+        .expect("Failed to get 'greater' function");
+    assert_eq!(greater.call(&mut store, (5, 3)).unwrap(), 1);
+    assert_eq!(greater.call(&mut store, (3, 5)).unwrap(), 0);
+    assert_eq!(greater.call(&mut store, (5, 5)).unwrap(), 0);
+}
+
+// === Additional Coverage Tests (these already pass) ===
+
+#[test]
+fn test_compile_nested_if() {
+    // Tests nested if/else - already implemented
+    let source = r#"
+snippet id="math.clamp" kind="fn"
+signature
+  fn name="clamp"
+    param name="x" type="Int"
+    param name="min" type="Int"
+    param name="max" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=less
+    input var="x"
+    input var="min"
+    as="below_min"
+  end
+  step id="s2" kind="if"
+    condition="below_min"
+    then
+      step id="s2a" kind="return"
+        from="min"
+        as="_"
+      end
+    end
+    else
+      step id="s2b" kind="compute"
+        op=greater
+        input var="x"
+        input var="max"
+        as="above_max"
+      end
+      step id="s2c" kind="if"
+        condition="above_max"
+        then
+          step id="s2c1" kind="return"
+            from="max"
+            as="_"
+          end
+        end
+        else
+          step id="s2c2" kind="return"
+            from="x"
+            as="_"
+          end
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let clamp = instance
+        .get_typed_func::<(i64, i64, i64), i64>(&mut store, "clamp")
+        .expect("Failed to get 'clamp' function");
+    assert_eq!(clamp.call(&mut store, (5, 0, 10)).unwrap(), 5);   // in range
+    assert_eq!(clamp.call(&mut store, (-5, 0, 10)).unwrap(), 0);  // below min
+    assert_eq!(clamp.call(&mut store, (15, 0, 10)).unwrap(), 10); // above max
+}
+
+#[test]
+fn test_compile_bind_step() {
+    // Tests bind step - already implemented
+    let source = r#"
+snippet id="test.bind" kind="fn"
+signature
+  fn name="test_bind"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="bind"
+    from="x"
+    as="y"
+  end
+  step id="s2" kind="compute"
+    op=add
+    input var="y"
+    input lit=10
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let test_bind = instance
+        .get_typed_func::<i64, i64>(&mut store, "test_bind")
+        .expect("Failed to get 'test_bind' function");
+    assert_eq!(test_bind.call(&mut store, 5).unwrap(), 15);
+    assert_eq!(test_bind.call(&mut store, 0).unwrap(), 10);
+}
+
+#[test]
+fn test_compile_bind_literal() {
+    // Tests bind with literal - already implemented
+    let source = r#"
+snippet id="test.const" kind="fn"
+signature
+  fn name="get_const"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="bind"
+    lit=42
+    as="answer"
+  end
+  step id="s2" kind="return"
+    from="answer"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let get_const = instance
+        .get_typed_func::<(), i64>(&mut store, "get_const")
+        .expect("Failed to get 'get_const' function");
+    assert_eq!(get_const.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_compile_division() {
+    // Tests division - already implemented
+    let source = r#"
+snippet id="math.div" kind="fn"
+signature
+  fn name="div"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=div
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let div = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "div")
+        .expect("Failed to get 'div' function");
+    assert_eq!(div.call(&mut store, (10, 2)).unwrap(), 5);
+    assert_eq!(div.call(&mut store, (7, 3)).unwrap(), 2);  // integer division
+    assert_eq!(div.call(&mut store, (-10, 3)).unwrap(), -3); // or -4, depending on semantics
+}
+
+#[test]
+fn test_compile_modulo() {
+    // Tests modulo - already implemented
+    let source = r#"
+snippet id="math.mod" kind="fn"
+signature
+  fn name="modulo"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="compute"
+    op=mod
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let modulo = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "modulo")
+        .expect("Failed to get 'modulo' function");
+    assert_eq!(modulo.call(&mut store, (10, 3)).unwrap(), 1);
+    assert_eq!(modulo.call(&mut store, (9, 3)).unwrap(), 0);
+    assert_eq!(modulo.call(&mut store, (7, 4)).unwrap(), 3);
+}
+
+// ============================================================================
+// More TDD Tests - These MUST FAIL until implemented
+// ============================================================================
+
+// === Match Step Tests (FAILS: match not implemented in codegen) ===
+
+#[test]
+fn test_compile_match_simple() {
+    // TDD: Match expressions are not yet implemented in codegen
+    // This tests matching on a simple enum-like discriminant
+    let source = r#"
+snippet id="types.Status" kind="enum"
+signature
+  enum name="Status"
+    variant name="Active"
+    end
+    variant name="Inactive"
+    end
+  end
+end
+end
+
+snippet id="test.check_status" kind="fn"
+signature
+  fn name="check_status"
+    param name="status" type="Status"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="match"
+    on="status"
+    case variant type="Status::Active"
+      step id="c1" kind="return"
+        lit=1
+        as="_"
+      end
+    end
+    case variant type="Status::Inactive"
+      step id="c2" kind="return"
+        lit=0
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let check = instance
+        .get_typed_func::<i32, i64>(&mut store, "check_status")
+        .expect("Failed to get 'check_status' function");
+    assert_eq!(check.call(&mut store, 0).unwrap(), 1);  // Active
+    assert_eq!(check.call(&mut store, 1).unwrap(), 0);  // Inactive
+}
+
+// === For Loop Tests (FAILS: iteration not implemented) ===
+
+#[test]
+fn test_compile_for_loop_sum() {
+    // TDD: For loops are not yet implemented in codegen
+    let source = r#"
+snippet id="math.sum_list" kind="fn"
+signature
+  fn name="sum_list"
+    param name="items" type="List<Int>"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="bind"
+    lit=0
+    as="total"
+  end
+  step id="s2" kind="for"
+    var="item" in="items"
+    step id="s2a" kind="compute"
+      op=add
+      input var="total"
+      input var="item"
+      as="total"
+    end
+    as="_"
+  end
+  step id="s3" kind="return"
+    from="total"
+    as="_"
+  end
+end
+end
+"#;
+    // This will fail because for loops and List types aren't implemented
+    let _program = covenant_parser::parse(source).expect("parse failed");
+    // Would need: compile_and_instantiate(source) to work
+    panic!("For loop codegen not implemented");
+}
+
+// === String Type Tests (FAILS: String not implemented in WASM) ===
+
+#[test]
+fn test_compile_string_return() {
+    // TDD: String handling not implemented in WASM codegen
+    let source = r#"
+snippet id="test.get_greeting" kind="fn"
+signature
+  fn name="get_greeting"
+    returns type="String"
+  end
+end
+body
+  step id="s1" kind="return"
+    lit="Hello, World!"
+    as="_"
+  end
+end
+end
+"#;
+    // This will fail - strings require memory management
+    let _program = covenant_parser::parse(source).expect("parse failed");
+    panic!("String codegen not implemented");
+}
+
+// === Struct Tests (FAILS: Struct codegen not implemented) ===
+
+#[test]
+fn test_compile_struct_construction() {
+    // TDD: Struct construction not implemented in codegen
+    // Structs require memory allocation and layout
+    let source = r#"
+snippet id="types.Point" kind="struct"
+signature
+  struct name="Point"
+    field name="x" type="Int"
+    field name="y" type="Int"
+  end
+end
+end
+
+snippet id="test.make_point" kind="fn"
+signature
+  fn name="make_point"
+    param name="x" type="Int"
+    param name="y" type="Int"
+    returns type="Point"
+  end
+end
+body
+  step id="s1" kind="construct"
+    type="Point"
+    field name="x" from="x"
+    field name="y" from="y"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    // Struct codegen requires memory management which isn't implemented
+    let program = covenant_parser::parse(source);
+    // Even if parsing succeeds, compilation will fail
+    if program.is_ok() {
+        let check_result = covenant_checker::check(&program.unwrap());
+        if check_result.is_ok() {
+            panic!("Struct codegen not implemented - should fail at compile");
+        }
+    }
+    panic!("Struct codegen not implemented");
+}
+
+// === Optional Type Tests (FAILS: Optional handling not implemented) ===
+
+#[test]
+fn test_compile_optional_return() {
+    // TDD: Optional/nullable values not implemented
+    let source = r#"
+snippet id="test.maybe_double" kind="fn"
+signature
+  fn name="maybe_double"
+    param name="x" type="Int"
+    param name="should_double" type="Bool"
+    returns type="Int" optional
+  end
+end
+body
+  step id="s1" kind="if"
+    condition="should_double"
+    then
+      step id="t1" kind="compute"
+        op=mul
+        input var="x"
+        input lit=2
+        as="doubled"
+      end
+      step id="t2" kind="return"
+        from="doubled"
+        as="_"
+      end
+    end
+    else
+      step id="e1" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+end
+"#;
+    let _program = covenant_parser::parse(source).expect("parse failed");
+    panic!("Optional type codegen not implemented");
+}

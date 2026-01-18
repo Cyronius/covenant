@@ -1,0 +1,12 @@
+[package]
+name = "covenant-runtime"
+version.workspace = true
+edition.workspace = true
+description = "Runtime query and mutation modules for Covenant WASM"
+
+[dependencies]
+covenant-ast = { workspace = true }
+covenant-symbols = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

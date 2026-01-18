@@ -1,0 +1,20 @@
+{
+  "name": "@covenant/host",
+  "version": "0.1.0",
+  "description": "TypeScript host for Covenant WASM runtime",
+  "main": "dist/loader.js",
+  "types": "dist/loader.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "MIT"
+}

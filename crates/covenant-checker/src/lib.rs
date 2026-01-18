@@ -30,6 +30,42 @@ pub enum CheckError {
 
     #[error("duplicate definition: {name}")]
     DuplicateDefinition { name: String },
+
+    #[error("incompatible union: {value_type} is not a member of {union_type}")]
+    IncompatibleUnion {
+        value_type: String,
+        union_type: String,
+    },
+
+    #[error("non-exhaustive match on {matched_type}: missing variants {missing:?}")]
+    NonExhaustiveMatch {
+        missing: Vec<String>,
+        matched_type: String,
+    },
+
+    #[error("unknown query target: {target}")]
+    UnknownQueryTarget { target: String },
+
+    #[error("unknown field '{field}' in type '{type_name}'")]
+    UnknownField { field: String, type_name: String },
+
+    #[error("missing platform implementation: extern-abstract '{abstract_id}' declares platform '{platform}' but no extern-impl exists")]
+    MissingPlatformImpl {
+        abstract_id: String,
+        platform: String,
+    },
+
+    #[error("extern-impl '{impl_id}' references unknown extern-abstract '{abstract_id}'")]
+    UnknownExternAbstract {
+        impl_id: String,
+        abstract_id: String,
+    },
+
+    #[error("no binding for '{extern_id}' on target '{target}'")]
+    NoBindingForTarget {
+        extern_id: String,
+        target: String,
+    },
 }
 
 /// Check a program and return the typed/annotated version

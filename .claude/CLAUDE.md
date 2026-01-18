@@ -363,11 +363,33 @@ See [EXTENSIBLE_KINDS.md](../docs/design/EXTENSIBLE_KINDS.md) for full specifica
 
 ---
 
-## Plan Files
+## Plan Mode Instructions
 
-Plans for this project go in `.claude/plans/` with human-readable filenames (e.g., `query-optimization-plan.md`).
+**IMPORTANT: Follow these rules when creating or managing plans.**
 
-When a plan is fully implemented, move it to `.claude/implemented_plans/`.
+### Writing Plans
+- **Location**: Always write plans to `.claude/plans/` in the project root (never to `~/.claude/plans/`)
+- **Naming**: Use descriptive kebab-case filenames derived from the plan title
+  - Example: A plan titled "# Implement Query Optimizer" → `implement-query-optimizer.md`
+  - Keep filenames under 60 characters
+  - If a file with that name exists, append `-2`, `-3`, etc.
+- **Format**: Start every plan with a `# Title` heading
+
+### Plan Lifecycle
+1. **Active plans** live in `.claude/plans/`
+2. **When implementation is complete**: Move the plan to `.claude/implemented_plans/`
+   - Add `## Status: Implemented` at the top (below the title) before moving
+   - Preserve the original filename
+
+### Directory Structure
+```
+.claude/
+├── plans/                    # Active plans being worked on
+│   └── implement-feature-x.md
+├── implemented_plans/        # Archived completed plans
+│   └── add-user-auth.md
+└── CLAUDE.md
+```
 
 ---
 

@@ -180,6 +180,8 @@ mod tests {
             kind: covenant_ast::SnippetKind::Function,
             notes: vec![],
             sections: vec![],
+            implements: None,
+            platform: None,
             span: make_span(),
         };
 
@@ -195,6 +197,8 @@ mod tests {
             kind: covenant_ast::SnippetKind::Function,
             notes: vec![],
             sections: vec![],
+            implements: None,
+            platform: None,
             span: make_span(),
         };
 
@@ -203,6 +207,8 @@ mod tests {
             kind: covenant_ast::SnippetKind::Function,
             notes: vec![],
             sections: vec![],
+            implements: None,
+            platform: None,
             span: make_span(),
         };
 
@@ -221,6 +227,8 @@ mod tests {
             kind: covenant_ast::SnippetKind::Function,
             notes: vec![],
             sections: vec![],
+            implements: None,
+            platform: None,
             span: make_span(),
         };
 
@@ -238,6 +246,8 @@ mod tests {
             kind: covenant_ast::SnippetKind::Function,
             notes: vec![],
             sections: vec![],
+            implements: None,
+            platform: None,
             span: make_span(),
         };
 
@@ -245,5 +255,95 @@ mod tests {
         assert!(result.graph.invariants.i1_bidirectionality);
         assert!(result.graph.invariants.i4_acyclicity);
         assert!(result.graph.invariants.i5_relation_bidirectionality);
+    }
+
+    #[test]
+    fn test_struct_symbol() {
+        let snippet = Snippet {
+            id: "types.User".into(),
+            kind: covenant_ast::SnippetKind::Struct,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let result = build_from_snippets(&[snippet]).unwrap();
+        let symbol = result.graph.get_by_name("types.User").unwrap();
+        assert_eq!(symbol.kind, SymbolKind::Struct);
+    }
+
+    #[test]
+    fn test_enum_symbol() {
+        let snippet = Snippet {
+            id: "types.Result".into(),
+            kind: covenant_ast::SnippetKind::Enum,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let result = build_from_snippets(&[snippet]).unwrap();
+        let symbol = result.graph.get_by_name("types.Result").unwrap();
+        assert_eq!(symbol.kind, SymbolKind::Enum);
+    }
+
+    #[test]
+    fn test_extern_symbol() {
+        let snippet = Snippet {
+            id: "io.print".into(),
+            kind: covenant_ast::SnippetKind::Extern,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let result = build_from_snippets(&[snippet]).unwrap();
+        let symbol = result.graph.get_by_name("io.print").unwrap();
+        assert_eq!(symbol.kind, SymbolKind::Extern);
+    }
+
+    #[test]
+    fn test_multiple_different_kinds() {
+        let fn_snippet = Snippet {
+            id: "app.main".into(),
+            kind: covenant_ast::SnippetKind::Function,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let struct_snippet = Snippet {
+            id: "types.User".into(),
+            kind: covenant_ast::SnippetKind::Struct,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let extern_snippet = Snippet {
+            id: "io.print".into(),
+            kind: covenant_ast::SnippetKind::Extern,
+            notes: vec![],
+            sections: vec![],
+            implements: None,
+            platform: None,
+            span: make_span(),
+        };
+
+        let result = build_from_snippets(&[fn_snippet, struct_snippet, extern_snippet]).unwrap();
+        assert_eq!(result.graph.len(), 3);
+        assert!(result.graph.contains("app.main"));
+        assert!(result.graph.contains("types.User"));
+        assert!(result.graph.contains("io.print"));
     }
 }

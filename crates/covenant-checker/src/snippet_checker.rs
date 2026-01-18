@@ -2,14 +2,15 @@
 //!
 //! Type checks snippets with IR-based step syntax (the primary Covenant format).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use covenant_ast::{
     Snippet, SnippetKind, Section, SignatureKind, BodySection,
     Step, StepKind, ComputeStep, Operation, Input, InputSource, CallStep,
     ReturnStep, ReturnValue, IfStep, BindStep, BindSource, MatchStep, MatchPattern,
-    FunctionSignature, ReturnType, Type, TypeKind, Literal,
+    FunctionSignature, ReturnType, Type, TypeKind, Literal, QueryStep, QueryContent,
+    StructSignature, EnumSignature,
 };
-use crate::{CheckError, CheckResult, ResolvedType, SymbolTable, SymbolKind, EffectTable};
+use crate::{CheckError, CheckResult, ResolvedType, SymbolTable, SymbolKind, EffectTable, TypeRegistry, VariantDef};
 
 /// Checker for snippet-mode programs
 pub struct SnippetChecker {
@@ -20,6 +21,8 @@ pub struct SnippetChecker {
     locals: HashMap<String, ResolvedType>,
     /// Map of function names to their return types (for recursive calls)
     function_returns: HashMap<String, ResolvedType>,
+    /// Registry of struct and enum type definitions
+    type_registry: TypeRegistry,
 }
 
 impl SnippetChecker {
@@ -30,15 +33,19 @@ impl SnippetChecker {
             errors: Vec::new(),
             locals: HashMap::new(),
             function_returns: HashMap::new(),
+            type_registry: TypeRegistry::new(),
         }
     }
 
     /// Check all snippets and return the result
     pub fn check_snippets(mut self, snippets: &[Snippet]) -> Result<CheckResult, Vec<CheckError>> {
-        // First pass: register all function signatures
+        // First pass: register all types and function signatures
         for snippet in snippets {
-            if snippet.kind == SnippetKind::Function {
-                self.register_function_signature(snippet);
+            match snippet.kind {
+                SnippetKind::Function => self.register_function_signature(snippet),
+                SnippetKind::Struct => self.register_struct_type(snippet),
+                SnippetKind::Enum => self.register_enum_type(snippet),
+                _ => {}
             }
         }
 
@@ -161,9 +168,9 @@ impl SnippetChecker {
             StepKind::Bind(bind) => self.infer_bind_step(bind),
             StepKind::Match(match_step) => self.infer_match_step(match_step),
             StepKind::For(_) => ResolvedType::None, // For loops don't produce a value
-            StepKind::Query(_) => ResolvedType::Unknown, // Would need query result type
-            StepKind::Insert(_) => ResolvedType::Unknown,
-            StepKind::Update(_) => ResolvedType::Unknown,
+            StepKind::Query(query) => self.infer_query_step(query),
+            StepKind::Insert(_) => ResolvedType::Unknown, // TODO: infer inserted type
+            StepKind::Update(_) => ResolvedType::Unknown, // TODO: infer update count
             StepKind::Delete(_) => ResolvedType::None,
             StepKind::Transaction(_) => ResolvedType::Unknown,
             StepKind::Traverse(_) => ResolvedType::Unknown,
@@ -199,9 +206,197 @@ impl SnippetChecker {
             // Negation: same as input type
             Operation::Neg => input_types.first().cloned().unwrap_or(ResolvedType::Int),
 
-            // String operations
-            Operation::Concat => ResolvedType::String,
-            Operation::Contains => ResolvedType::Bool,
+            // String operations that return String
+            Operation::Concat | Operation::Upper | Operation::Lower |
+            Operation::Trim | Operation::TrimStart | Operation::TrimEnd |
+            Operation::Replace | Operation::Join | Operation::Repeat |
+            Operation::StrReverse | Operation::PadStart | Operation::PadEnd => ResolvedType::String,
+
+            // String slice returns String
+            Operation::Slice => ResolvedType::String,
+
+            // String operations that return Bool
+            Operation::Contains | Operation::StartsWith | Operation::EndsWith |
+            Operation::IsEmpty => ResolvedType::Bool,
+
+            // String operations that return Int
+            Operation::StrLen | Operation::ByteLen => ResolvedType::Int,
+
+            // String operations that return Optional
+            Operation::IndexOf => ResolvedType::Optional(Box::new(ResolvedType::Int)),
+            Operation::CharAt => ResolvedType::Optional(Box::new(ResolvedType::Char)),
+
+            // Split returns list of strings
+            Operation::Split => ResolvedType::List(Box::new(ResolvedType::String)),
+
+            // Numeric operations: Abs, Sign preserve type; Min/Max preserve type
+            Operation::Abs | Operation::Sign => input_types.first().cloned().unwrap_or(ResolvedType::Int),
+            Operation::Min | Operation::Max | Operation::Clamp => {
+                if input_types.iter().any(|t| matches!(t, ResolvedType::Float)) {
+                    ResolvedType::Float
+                } else {
+                    ResolvedType::Int
+                }
+            }
+
+            // Float operations always return Float
+            Operation::Pow | Operation::Sqrt => ResolvedType::Float,
+
+            // Rounding operations return Int
+            Operation::Floor | Operation::Ceil | Operation::Round | Operation::Trunc => ResolvedType::Int,
+
+            // Bitwise operations return Int
+            Operation::BitAnd | Operation::BitOr | Operation::BitXor | Operation::BitNot |
+            Operation::BitShl | Operation::BitShr | Operation::BitUshr => ResolvedType::Int,
+
+            // Conversion operations
+            Operation::ToInt => ResolvedType::Int,
+            Operation::ToFloat => ResolvedType::Float,
+            Operation::ToString => ResolvedType::String,
+            Operation::ParseInt => ResolvedType::Union(vec![
+                ResolvedType::Int,
+                ResolvedType::Named { name: "ParseError".to_string(), id: covenant_ast::SymbolId(0), args: vec![] }
+            ]),
+            Operation::ParseFloat => ResolvedType::Union(vec![
+                ResolvedType::Float,
+                ResolvedType::Named { name: "ParseError".to_string(), id: covenant_ast::SymbolId(0), args: vec![] }
+            ]),
+
+            // List operations that return Int
+            Operation::ListLen => ResolvedType::Int,
+
+            // List operations that return Bool
+            Operation::ListContains | Operation::ListIsEmpty => ResolvedType::Bool,
+
+            // List operations that return Optional element
+            Operation::ListGet | Operation::ListFirst | Operation::ListLast => {
+                match input_types.first() {
+                    Some(ResolvedType::List(inner)) => ResolvedType::Optional(inner.clone()),
+                    _ => ResolvedType::Optional(Box::new(ResolvedType::Unknown))
+                }
+            }
+
+            // List operations that return Optional Int
+            Operation::ListIndexOf => ResolvedType::Optional(Box::new(ResolvedType::Int)),
+
+            // List operations that return new list (same type)
+            Operation::ListAppend | Operation::ListPrepend | Operation::ListConcat |
+            Operation::ListSlice | Operation::ListReverse | Operation::ListTake |
+            Operation::ListDrop | Operation::ListSort | Operation::ListDedup => {
+                input_types.first().cloned().unwrap_or(ResolvedType::List(Box::new(ResolvedType::Unknown)))
+            }
+
+            // ListFlatten: List<List<T>> -> List<T>
+            Operation::ListFlatten => {
+                match input_types.first() {
+                    Some(ResolvedType::List(inner)) => match inner.as_ref() {
+                        ResolvedType::List(inner_inner) => ResolvedType::List(inner_inner.clone()),
+                        _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                    },
+                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                }
+            }
+
+            // Map operations that return Int
+            Operation::MapLen => ResolvedType::Int,
+
+            // Map operations that return Bool
+            Operation::MapHas | Operation::MapIsEmpty => ResolvedType::Bool,
+
+            // Map operations that return Optional value
+            Operation::MapGet => {
+                match input_types.first() {
+                    Some(ResolvedType::Named { args, .. }) if args.len() >= 2 => {
+                        ResolvedType::Optional(Box::new(args[1].clone()))
+                    }
+                    _ => ResolvedType::Optional(Box::new(ResolvedType::Unknown))
+                }
+            }
+
+            // Map operations that return new map
+            Operation::MapInsert | Operation::MapRemove | Operation::MapMerge => {
+                input_types.first().cloned().unwrap_or(ResolvedType::Unknown)
+            }
+
+            // Map operations that return lists
+            Operation::MapKeys => {
+                match input_types.first() {
+                    Some(ResolvedType::Named { args, .. }) if !args.is_empty() => {
+                        ResolvedType::List(Box::new(args[0].clone()))
+                    }
+                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                }
+            }
+            Operation::MapValues => {
+                match input_types.first() {
+                    Some(ResolvedType::Named { args, .. }) if args.len() >= 2 => {
+                        ResolvedType::List(Box::new(args[1].clone()))
+                    }
+                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                }
+            }
+            Operation::MapEntries => {
+                match input_types.first() {
+                    Some(ResolvedType::Named { args, .. }) if args.len() >= 2 => {
+                        ResolvedType::List(Box::new(ResolvedType::Tuple(args.clone())))
+                    }
+                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                }
+            }
+
+            // Set operations that return Int
+            Operation::SetLen => ResolvedType::Int,
+
+            // Set operations that return Bool
+            Operation::SetHas | Operation::SetIsEmpty | Operation::SetIsSubset |
+            Operation::SetIsSuperset => ResolvedType::Bool,
+
+            // Set operations that return new set
+            Operation::SetAdd | Operation::SetRemove | Operation::SetUnion |
+            Operation::SetIntersect | Operation::SetDiff | Operation::SetSymmetricDiff => {
+                input_types.first().cloned().unwrap_or(ResolvedType::Set(Box::new(ResolvedType::Unknown)))
+            }
+
+            // Set to list
+            Operation::SetToList => {
+                match input_types.first() {
+                    Some(ResolvedType::Set(inner)) => ResolvedType::List(inner.clone()),
+                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
+                }
+            }
+
+            // DateTime operations that return Int
+            Operation::DtYear | Operation::DtMonth | Operation::DtDay |
+            Operation::DtHour | Operation::DtMinute | Operation::DtSecond |
+            Operation::DtWeekday | Operation::DtUnix | Operation::DtDiff => ResolvedType::Int,
+
+            // DateTime operations that return DateTime
+            Operation::DtAddDays | Operation::DtAddHours |
+            Operation::DtAddMinutes | Operation::DtAddSeconds => ResolvedType::DateTime,
+
+            // DateTime format returns String
+            Operation::DtFormat => ResolvedType::String,
+
+            // Bytes operations that return Int
+            Operation::BytesLen => ResolvedType::Int,
+
+            // Bytes operations that return Bool
+            Operation::BytesIsEmpty => ResolvedType::Bool,
+
+            // Bytes operations that return Optional Int
+            Operation::BytesGet => ResolvedType::Optional(Box::new(ResolvedType::Int)),
+
+            // Bytes operations that return Bytes
+            Operation::BytesSlice | Operation::BytesConcat => ResolvedType::Bytes,
+
+            // Bytes to string can fail
+            Operation::BytesToString => ResolvedType::Union(vec![
+                ResolvedType::String,
+                ResolvedType::Named { name: "DecodeError".to_string(), id: covenant_ast::SymbolId(0), args: vec![] }
+            ]),
+
+            // Bytes to Base64/Hex return String
+            Operation::BytesToBase64 | Operation::BytesToHex => ResolvedType::String,
         }
     }
 
@@ -312,22 +507,35 @@ impl SnippetChecker {
 
     /// Infer type of a match step
     fn infer_match_step(&mut self, match_step: &MatchStep) -> ResolvedType {
-        // Check the match target exists
-        if !self.locals.contains_key(&match_step.on) {
+        // Check the match target exists and get its type
+        let matched_type = if let Some(ty) = self.locals.get(&match_step.on) {
+            ty.clone()
+        } else {
             self.errors.push(CheckError::UndefinedSymbol {
                 name: match_step.on.clone(),
             });
-        }
+            return ResolvedType::Error;
+        };
+
+        // Check exhaustiveness
+        self.check_match_exhaustiveness(match_step, &matched_type);
 
         // Clone cases to avoid borrow issues
         let cases = match_step.cases.clone();
 
+        // Collect case result types
+        let mut case_types: Vec<ResolvedType> = Vec::new();
+
         // Check each case
         for case in &cases {
-            // Add pattern bindings to scope
-            if let MatchPattern::Variant { bindings, .. } = &case.pattern {
+            // Add pattern bindings to scope with appropriate types
+            if let MatchPattern::Variant { variant, bindings } = &case.pattern {
+                // Try to get the variant's field types from the matched type
+                let variant_name = extract_variant_name(variant);
+                let binding_type = self.get_variant_binding_type(&matched_type, &variant_name);
+
                 for binding in bindings {
-                    self.locals.insert(binding.clone(), ResolvedType::Unknown);
+                    self.locals.insert(binding.clone(), binding_type.clone());
                 }
             }
 
@@ -335,9 +543,66 @@ impl SnippetChecker {
             for step in &case.steps {
                 self.check_step(step);
             }
+
+            // Get the type of the last step (if any) as the case result
+            if let Some(last_step) = case.steps.last() {
+                if let Some(ty) = self.locals.get(&last_step.output_binding) {
+                    case_types.push(ty.clone());
+                }
+            }
         }
 
-        ResolvedType::None
+        // Return the result type of the match
+        if case_types.is_empty() {
+            ResolvedType::None
+        } else if case_types.iter().all(|t| t == &case_types[0]) {
+            // All cases return the same type
+            case_types.into_iter().next().unwrap_or(ResolvedType::None)
+        } else {
+            // Cases return different types - result is a union
+            ResolvedType::Union(case_types)
+        }
+    }
+
+    /// Get the binding type for a variant pattern
+    fn get_variant_binding_type(&self, matched_type: &ResolvedType, variant_name: &str) -> ResolvedType {
+        match matched_type {
+            ResolvedType::Named { name, .. } => {
+                // Look up enum variant in type registry
+                if let Some(enum_def) = self.type_registry.get_enum(name) {
+                    for variant in &enum_def.variants {
+                        if variant.name == variant_name {
+                            // If variant has fields, return the first field's type
+                            // (simplified - real implementation would handle multiple fields)
+                            if let Some(fields) = &variant.fields {
+                                if let Some((_, ty)) = fields.first() {
+                                    return ty.clone();
+                                }
+                            }
+                            return ResolvedType::None;
+                        }
+                    }
+                }
+                ResolvedType::Unknown
+            }
+            ResolvedType::Union(types) => {
+                // Find the matching type in the union
+                for ty in types {
+                    if ty.display() == variant_name {
+                        return ty.clone();
+                    }
+                }
+                ResolvedType::Unknown
+            }
+            ResolvedType::Optional(inner) => {
+                if variant_name == "some" || variant_name == inner.display() {
+                    (**inner).clone()
+                } else {
+                    ResolvedType::None
+                }
+            }
+            _ => ResolvedType::Unknown,
+        }
     }
 
     /// Resolve an input's type
@@ -385,6 +650,9 @@ impl SnippetChecker {
                     "Float" => ResolvedType::Float,
                     "Bool" => ResolvedType::Bool,
                     "String" => ResolvedType::String,
+                    "Char" => ResolvedType::Char,
+                    "Bytes" => ResolvedType::Bytes,
+                    "DateTime" => ResolvedType::DateTime,
                     _ => ResolvedType::Named {
                         name: name.to_string(),
                         id: covenant_ast::SymbolId(0), // Placeholder
@@ -451,14 +719,221 @@ impl SnippetChecker {
         }
     }
 
-    /// Check a struct snippet (just register it for now)
-    fn check_struct_snippet(&mut self, _snippet: &Snippet) {
-        // TODO: Register struct type
+    /// Register a struct type (first pass)
+    fn register_struct_type(&mut self, snippet: &Snippet) {
+        let struct_sig = match find_struct_signature(snippet) {
+            Some(s) => s,
+            None => return,
+        };
+
+        let fields: Vec<(String, ResolvedType)> = struct_sig
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), self.resolve_type(&f.ty)))
+            .collect();
+
+        // Register in type registry
+        self.type_registry
+            .register_struct(struct_sig.name.clone(), fields.clone());
+
+        // Also register as a symbol
+        self.symbols.define(
+            struct_sig.name.clone(),
+            SymbolKind::Type,
+            ResolvedType::Struct(fields),
+        );
     }
 
-    /// Check an enum snippet (just register it for now)
+    /// Register an enum type (first pass)
+    fn register_enum_type(&mut self, snippet: &Snippet) {
+        let enum_sig = match find_enum_signature(snippet) {
+            Some(e) => e,
+            None => return,
+        };
+
+        let variants: Vec<VariantDef> = enum_sig
+            .variants
+            .iter()
+            .map(|v| VariantDef {
+                name: v.name.clone(),
+                fields: v.fields.as_ref().map(|fields| {
+                    fields
+                        .iter()
+                        .map(|f| (f.name.clone(), self.resolve_type(&f.ty)))
+                        .collect()
+                }),
+            })
+            .collect();
+
+        // Register in type registry
+        self.type_registry
+            .register_enum(enum_sig.name.clone(), variants);
+
+        // Also register as a symbol
+        self.symbols.define(
+            enum_sig.name.clone(),
+            SymbolKind::Type,
+            ResolvedType::Named {
+                name: enum_sig.name.clone(),
+                id: covenant_ast::SymbolId(0),
+                args: vec![],
+            },
+        );
+    }
+
+    /// Check a struct snippet (second pass - validate field types)
+    fn check_struct_snippet(&mut self, _snippet: &Snippet) {
+        // Struct validation happens during registration
+        // Future: could validate field type references exist
+    }
+
+    /// Check an enum snippet (second pass - validate variant types)
     fn check_enum_snippet(&mut self, _snippet: &Snippet) {
-        // TODO: Register enum type
+        // Enum validation happens during registration
+        // Future: could validate variant field type references exist
+    }
+
+    /// Get variant names for a type (for match exhaustiveness)
+    fn get_type_variants(&self, ty: &ResolvedType) -> Option<Vec<String>> {
+        match ty {
+            ResolvedType::Named { name, .. } => {
+                // Look up enum in type registry
+                self.type_registry.get_enum_variants(name)
+            }
+            ResolvedType::Union(types) => {
+                // Union types: each member type is a "variant"
+                Some(types.iter().map(|t| t.display()).collect())
+            }
+            ResolvedType::Optional(inner) => {
+                // Optional is effectively a union of inner | None
+                Some(vec![inner.display(), "none".to_string()])
+            }
+            _ => None,
+        }
+    }
+
+    /// Check match exhaustiveness
+    fn check_match_exhaustiveness(&mut self, match_step: &MatchStep, matched_type: &ResolvedType) {
+        let all_variants = match self.get_type_variants(matched_type) {
+            Some(variants) => variants,
+            None => return, // Not a matchable type (enum/union/optional)
+        };
+
+        let mut covered: HashSet<String> = HashSet::new();
+        let mut has_wildcard = false;
+
+        for case in &match_step.cases {
+            match &case.pattern {
+                MatchPattern::Variant { variant, .. } => {
+                    // Extract variant name (e.g., "Json::String" -> "String")
+                    let variant_name = extract_variant_name(variant);
+                    covered.insert(variant_name);
+                }
+                MatchPattern::Wildcard => {
+                    has_wildcard = true;
+                }
+            }
+        }
+
+        // Wildcard covers all remaining variants
+        if has_wildcard {
+            return;
+        }
+
+        let missing: Vec<String> = all_variants
+            .iter()
+            .filter(|v| !covered.contains(*v))
+            .cloned()
+            .collect();
+
+        if !missing.is_empty() {
+            self.errors.push(CheckError::NonExhaustiveMatch {
+                missing,
+                matched_type: matched_type.display(),
+            });
+        }
+    }
+
+    /// Infer type of a query step
+    fn infer_query_step(&mut self, query: &QueryStep) -> ResolvedType {
+        match &query.content {
+            QueryContent::Covenant(cov_query) => {
+                // For project queries, return metadata types
+                if query.target == "project" {
+                    return self.infer_project_query(&cov_query.from);
+                }
+
+                // For other Covenant queries, infer from target
+                // The result is typically a list of the from type
+                let from_type = self.resolve_from_type(&cov_query.from);
+
+                // Check if limit=1 (returns optional instead of list)
+                if cov_query.limit == Some(1) {
+                    ResolvedType::Optional(Box::new(from_type))
+                } else {
+                    ResolvedType::List(Box::new(from_type))
+                }
+            }
+            QueryContent::Dialect(dialect_query) => {
+                // SQL dialect queries must have explicit returns type
+                self.resolve_return_type(&dialect_query.returns)
+            }
+        }
+    }
+
+    /// Infer type for project metadata queries
+    fn infer_project_query(&self, from: &str) -> ResolvedType {
+        // Project queries return lists of metadata structs
+        let element_type = match from {
+            "functions" => ResolvedType::Struct(vec![
+                ("id".to_string(), ResolvedType::String),
+                ("name".to_string(), ResolvedType::String),
+                (
+                    "effects".to_string(),
+                    ResolvedType::List(Box::new(ResolvedType::String)),
+                ),
+            ]),
+            "structs" | "types" => ResolvedType::Struct(vec![
+                ("id".to_string(), ResolvedType::String),
+                ("name".to_string(), ResolvedType::String),
+            ]),
+            "requirements" => ResolvedType::Struct(vec![
+                ("id".to_string(), ResolvedType::String),
+                ("text".to_string(), ResolvedType::Optional(Box::new(ResolvedType::String))),
+                ("priority".to_string(), ResolvedType::String),
+            ]),
+            "tests" => ResolvedType::Struct(vec![
+                ("id".to_string(), ResolvedType::String),
+                ("kind".to_string(), ResolvedType::String),
+                (
+                    "covers".to_string(),
+                    ResolvedType::List(Box::new(ResolvedType::String)),
+                ),
+            ]),
+            _ => ResolvedType::Unknown,
+        };
+
+        ResolvedType::List(Box::new(element_type))
+    }
+
+    /// Resolve a "from" clause type
+    fn resolve_from_type(&self, from: &str) -> ResolvedType {
+        // Check if it's a registered type
+        if let Some(struct_def) = self.type_registry.get_struct(from) {
+            return ResolvedType::Struct(struct_def.fields.clone());
+        }
+
+        // Check symbol table
+        if let Some(symbol) = self.symbols.lookup(from) {
+            return symbol.ty.clone();
+        }
+
+        // Unknown type
+        ResolvedType::Named {
+            name: from.to_string(),
+            id: covenant_ast::SymbolId(0),
+            args: vec![],
+        }
     }
 }
 
@@ -504,6 +979,39 @@ fn collect_snippet_effects(snippet: &Snippet) -> Vec<String> {
     Vec::new()
 }
 
+/// Find the struct signature in a snippet
+fn find_struct_signature(snippet: &Snippet) -> Option<&StructSignature> {
+    for section in &snippet.sections {
+        if let Section::Signature(sig) = section {
+            if let SignatureKind::Struct(struct_sig) = &sig.kind {
+                return Some(struct_sig);
+            }
+        }
+    }
+    None
+}
+
+/// Find the enum signature in a snippet
+fn find_enum_signature(snippet: &Snippet) -> Option<&EnumSignature> {
+    for section in &snippet.sections {
+        if let Section::Signature(sig) = section {
+            if let SignatureKind::Enum(enum_sig) = &sig.kind {
+                return Some(enum_sig);
+            }
+        }
+    }
+    None
+}
+
+/// Extract variant name from full path (e.g., "Json::String" -> "String")
+fn extract_variant_name(full_name: &str) -> String {
+    full_name
+        .split("::")
+        .last()
+        .unwrap_or(full_name)
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +1020,135 @@ mod tests {
     fn test_checker_creation() {
         let checker = SnippetChecker::new();
         assert!(checker.errors.is_empty());
+    }
+
+    #[test]
+    fn test_type_registry_struct() {
+        let mut registry = TypeRegistry::new();
+        registry.register_struct(
+            "User".to_string(),
+            vec![
+                ("id".to_string(), ResolvedType::Int),
+                ("name".to_string(), ResolvedType::String),
+            ],
+        );
+
+        let user = registry.get_struct("User");
+        assert!(user.is_some());
+        assert_eq!(user.unwrap().fields.len(), 2);
+
+        let id_type = registry.get_struct_field("User", "id");
+        assert!(matches!(id_type, Some(ResolvedType::Int)));
+
+        let unknown = registry.get_struct("Unknown");
+        assert!(unknown.is_none());
+    }
+
+    #[test]
+    fn test_type_registry_enum() {
+        let mut registry = TypeRegistry::new();
+        registry.register_enum(
+            "Result".to_string(),
+            vec![
+                VariantDef {
+                    name: "Ok".to_string(),
+                    fields: Some(vec![("value".to_string(), ResolvedType::Int)]),
+                },
+                VariantDef {
+                    name: "Err".to_string(),
+                    fields: Some(vec![("error".to_string(), ResolvedType::String)]),
+                },
+            ],
+        );
+
+        let result_enum = registry.get_enum("Result");
+        assert!(result_enum.is_some());
+        assert_eq!(result_enum.unwrap().variants.len(), 2);
+
+        let variants = registry.get_enum_variants("Result");
+        assert!(variants.is_some());
+        let v = variants.unwrap();
+        assert!(v.contains(&"Ok".to_string()));
+        assert!(v.contains(&"Err".to_string()));
+    }
+
+    #[test]
+    fn test_extract_variant_name() {
+        assert_eq!(extract_variant_name("Json::String"), "String");
+        assert_eq!(extract_variant_name("Option::Some"), "Some");
+        assert_eq!(extract_variant_name("Simple"), "Simple");
+        assert_eq!(extract_variant_name("a::b::c"), "c");
+    }
+
+    #[test]
+    fn test_get_type_variants_for_union() {
+        let checker = SnippetChecker::new();
+        let union_type = ResolvedType::Union(vec![
+            ResolvedType::Int,
+            ResolvedType::String,
+        ]);
+
+        let variants = checker.get_type_variants(&union_type);
+        assert!(variants.is_some());
+        let v = variants.unwrap();
+        assert_eq!(v.len(), 2);
+        assert!(v.contains(&"Int".to_string()));
+        assert!(v.contains(&"String".to_string()));
+    }
+
+    #[test]
+    fn test_get_type_variants_for_optional() {
+        let checker = SnippetChecker::new();
+        let optional_type = ResolvedType::Optional(Box::new(ResolvedType::Int));
+
+        let variants = checker.get_type_variants(&optional_type);
+        assert!(variants.is_some());
+        let v = variants.unwrap();
+        assert_eq!(v.len(), 2);
+        assert!(v.contains(&"Int".to_string()));
+        assert!(v.contains(&"none".to_string()));
+    }
+
+    #[test]
+    fn test_get_type_variants_for_non_matchable() {
+        let checker = SnippetChecker::new();
+
+        // Primitives are not matchable (no variants)
+        assert!(checker.get_type_variants(&ResolvedType::Int).is_none());
+        assert!(checker.get_type_variants(&ResolvedType::String).is_none());
+        assert!(checker.get_type_variants(&ResolvedType::Bool).is_none());
+    }
+
+    #[test]
+    fn test_infer_project_query_functions() {
+        let checker = SnippetChecker::new();
+        let result = checker.infer_project_query("functions");
+
+        match result {
+            ResolvedType::List(inner) => {
+                match *inner {
+                    ResolvedType::Struct(fields) => {
+                        assert!(fields.iter().any(|(name, _)| name == "id"));
+                        assert!(fields.iter().any(|(name, _)| name == "name"));
+                        assert!(fields.iter().any(|(name, _)| name == "effects"));
+                    }
+                    _ => panic!("Expected struct type for function info"),
+                }
+            }
+            _ => panic!("Expected list type for project query"),
+        }
+    }
+
+    #[test]
+    fn test_infer_project_query_unknown() {
+        let checker = SnippetChecker::new();
+        let result = checker.infer_project_query("unknown_thing");
+
+        match result {
+            ResolvedType::List(inner) => {
+                assert!(matches!(*inner, ResolvedType::Unknown));
+            }
+            _ => panic!("Expected list type for project query"),
+        }
     }
 }

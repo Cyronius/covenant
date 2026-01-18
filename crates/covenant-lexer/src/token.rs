@@ -89,6 +89,10 @@ pub enum TokenKind {
     Rel,
     #[token("types")]
     Types,
+    #[token("platforms")]
+    Platforms,
+    #[token("platform")]
+    Platform,
     #[token("fn")]
     Fn,
     #[token("param")]
@@ -338,6 +342,8 @@ impl TokenKind {
                 | TokenKind::Dialect
                 | TokenKind::Rel
                 | TokenKind::Types
+                | TokenKind::Platforms
+                | TokenKind::Platform
                 | TokenKind::Fn
                 | TokenKind::Param
                 | TokenKind::Returns
@@ -433,6 +439,8 @@ impl TokenKind {
             TokenKind::Dialect => "'dialect'",
             TokenKind::Rel => "'rel'",
             TokenKind::Types => "'types'",
+            TokenKind::Platforms => "'platforms'",
+            TokenKind::Platform => "'platform'",
             TokenKind::Fn => "'fn'",
             TokenKind::Param => "'param'",
             TokenKind::Returns => "'returns'",

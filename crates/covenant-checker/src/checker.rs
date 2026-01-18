@@ -432,6 +432,9 @@ impl Checker {
                     "Float" => ResolvedType::Float,
                     "Bool" => ResolvedType::Bool,
                     "String" => ResolvedType::String,
+                    "Char" => ResolvedType::Char,
+                    "Bytes" => ResolvedType::Bytes,
+                    "DateTime" => ResolvedType::DateTime,
                     _ => ResolvedType::Named {
                         name: name.to_string(),
                         id: SymbolId(0),
@@ -466,19 +469,79 @@ impl Checker {
 
     fn types_compatible(&self, expected: &ResolvedType, found: &ResolvedType) -> bool {
         match (expected, found) {
+            // Unknown and Error types are compatible with anything
             (ResolvedType::Unknown, _) | (_, ResolvedType::Unknown) => true,
             (ResolvedType::Error, _) | (_, ResolvedType::Error) => true,
+
+            // Primitive types
             (ResolvedType::Int, ResolvedType::Int) => true,
             (ResolvedType::Float, ResolvedType::Float) => true,
             (ResolvedType::Float, ResolvedType::Int) => true, // Int can be used as Float
             (ResolvedType::Bool, ResolvedType::Bool) => true,
             (ResolvedType::String, ResolvedType::String) => true,
+            (ResolvedType::Char, ResolvedType::Char) => true,
+            (ResolvedType::Bytes, ResolvedType::Bytes) => true,
+            (ResolvedType::DateTime, ResolvedType::DateTime) => true,
             (ResolvedType::None, ResolvedType::None) => true,
+
+            // Optional types
             (ResolvedType::Optional(_inner), ResolvedType::None) => true,
             (ResolvedType::Optional(e), ResolvedType::Optional(f)) => self.types_compatible(e, f),
             (ResolvedType::Optional(e), f) => self.types_compatible(e, f),
+
+            // List types
             (ResolvedType::List(e), ResolvedType::List(f)) => self.types_compatible(e, f),
-            (ResolvedType::Named { name: n1, .. }, ResolvedType::Named { name: n2, .. }) => n1 == n2,
+
+            // Set types
+            (ResolvedType::Set(e), ResolvedType::Set(f)) => self.types_compatible(e, f),
+
+            // Union types - value must be compatible with at least one member
+            (ResolvedType::Union(members), found) => {
+                members.iter().any(|m| self.types_compatible(m, found))
+            }
+
+            // Assigning union to non-union - all members must be compatible
+            (expected, ResolvedType::Union(members)) => {
+                members.iter().all(|m| self.types_compatible(expected, m))
+            }
+
+            // Tuple types - all elements must match
+            (ResolvedType::Tuple(e), ResolvedType::Tuple(f)) => {
+                e.len() == f.len()
+                    && e.iter().zip(f).all(|(a, b)| self.types_compatible(a, b))
+            }
+
+            // Named types with generic args
+            (
+                ResolvedType::Named { name: n1, args: a1, .. },
+                ResolvedType::Named { name: n2, args: a2, .. },
+            ) => {
+                n1 == n2
+                    && a1.len() == a2.len()
+                    && a1.iter().zip(a2).all(|(t1, t2)| self.types_compatible(t1, t2))
+            }
+
+            // Struct types - all fields must match
+            (ResolvedType::Struct(e), ResolvedType::Struct(f)) => {
+                e.len() == f.len()
+                    && e.iter().all(|(name, ty)| {
+                        f.iter()
+                            .find(|(n, _)| n == name)
+                            .map(|(_, t)| self.types_compatible(ty, t))
+                            .unwrap_or(false)
+                    })
+            }
+
+            // Function types
+            (
+                ResolvedType::Function { params: p1, ret: r1 },
+                ResolvedType::Function { params: p2, ret: r2 },
+            ) => {
+                p1.len() == p2.len()
+                    && p1.iter().zip(p2).all(|(a, b)| self.types_compatible(a, b))
+                    && self.types_compatible(r1, r2)
+            }
+
             _ => false,
         }
     }

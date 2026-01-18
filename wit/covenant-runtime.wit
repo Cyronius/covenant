@@ -1,0 +1,228 @@
+// WIT (WebAssembly Interface Types) definitions for Covenant runtime modules
+// These interfaces define how Covenant WASM modules communicate with each other
+// and with the host environment.
+
+package covenant:runtime;
+
+// =============================================================================
+// Symbol Storage Interface
+// =============================================================================
+// The symbols interface provides CRUD operations for the symbol graph.
+// This is implemented by symbols.wasm and imported by query.wasm and app modules.
+
+interface symbols {
+    // A symbol represents a Covenant snippet in the symbol graph
+    record symbol {
+        // Unique identifier (e.g., "auth.login", "db.query")
+        id: string,
+
+        // Kind of snippet: "fn", "struct", "enum", "module", "database", "extern"
+        kind: string,
+
+        // Source location
+        file: string,
+        line: u32,
+
+        // Forward references (extracted from AST)
+        calls: list<string>,
+        references: list<string>,
+
+        // Backward references (computed)
+        called-by: list<string>,
+        referenced-by: list<string>,
+
+        // Effects
+        effects: list<string>,
+        effect-closure: list<string>,
+
+        // Requirements and tests
+        requirements: list<string>,
+        tests: list<string>,
+    }
+
+    // Filter for querying symbols
+    record symbol-filter {
+        // Filter by kind (optional)
+        kind: option<string>,
+
+        // Filter by having a specific effect
+        has-effect: option<string>,
+
+        // Filter by calling a specific function
+        calls-fn: option<string>,
+
+        // Filter by being called by a specific function
+        called-by-fn: option<string>,
+    }
+
+    // Get a single symbol by ID
+    get-symbol: func(id: string) -> option<symbol>;
+
+    // List all symbols matching a filter
+    list-symbols: func(filter: symbol-filter) -> list<symbol>;
+
+    // Update or insert a symbol
+    upsert-symbol: func(sym: symbol) -> result<_, string>;
+
+    // Delete a symbol
+    delete-symbol: func(id: string) -> bool;
+
+    // Get the current version of the symbol graph (increments on mutation)
+    get-version: func() -> u64;
+}
+
+// =============================================================================
+// Query Execution Interface
+// =============================================================================
+// The query interface provides sync and async query execution.
+// This is implemented by query.wasm and imported by app modules.
+
+interface query {
+    // Opaque handle for async queries
+    type query-handle = u64;
+
+    // Query request structure (matches Covenant query syntax)
+    record query-request {
+        // What to select: "all" or comma-separated field names
+        select-clause: string,
+
+        // Type to query: "functions", "structs", "requirements", "tests", "steps"
+        from-type: string,
+
+        // Optional where clause as JSON (parsed by query engine)
+        where-clause: option<string>,
+
+        // Optional ordering: "field:asc" or "field:desc"
+        order-by: option<string>,
+
+        // Optional limit on results
+        %limit: option<u32>,
+
+        // Optional offset for pagination
+        offset: option<u32>,
+    }
+
+    // Query result
+    record query-result {
+        // Matching symbols
+        symbols: list<symbols.symbol>,
+
+        // Version at which query was executed
+        version: u64,
+
+        // Whether more results exist (for pagination)
+        has-more: bool,
+    }
+
+    // Status of an async query
+    enum query-status {
+        pending,
+        complete,
+        error,
+        cancelled,
+    }
+
+    // Error information for failed queries
+    record query-error {
+        code: string,
+        message: string,
+    }
+
+    // Synchronous query execution
+    execute-query: func(request: query-request) -> result<query-result, query-error>;
+
+    // Asynchronous query - start
+    start-query: func(request: query-request) -> query-handle;
+
+    // Asynchronous query - check status
+    poll-query: func(handle: query-handle) -> query-status;
+
+    // Asynchronous query - get result (returns none if not complete)
+    get-result: func(handle: query-handle) -> option<result<query-result, query-error>>;
+
+    // Asynchronous query - cancel
+    cancel-query: func(handle: query-handle);
+}
+
+// =============================================================================
+// Mutation Interface
+// =============================================================================
+// The mutation interface provides operations to modify Covenant source code.
+// This is implemented by mutation.wasm and imported by IDE/agent tools.
+
+interface mutation {
+    // Result of a mutation operation
+    record mutation-result {
+        success: bool,
+        errors: list<string>,
+        warnings: list<string>,
+        new-version: u64,
+    }
+
+    // Result of a compilation
+    record compile-result {
+        success: bool,
+        errors: list<string>,
+        // WASM binary (if successful)
+        wasm: option<list<u8>>,
+    }
+
+    // Parse and validate a snippet (does not modify symbol graph)
+    parse-snippet: func(source: string) -> mutation-result;
+
+    // Update a snippet in the symbol graph
+    update-snippet: func(id: string, source: string) -> mutation-result;
+
+    // Delete a snippet from the symbol graph
+    delete-snippet: func(id: string) -> bool;
+
+    // Compile a single snippet to WASM
+    compile-snippet: func(id: string) -> compile-result;
+
+    // Recompile a snippet (update + compile in one operation)
+    recompile-snippet: func(id: string, source: string) -> compile-result;
+}
+
+// =============================================================================
+// Worlds
+// =============================================================================
+// Worlds define the complete interface contract for different module types.
+
+// World for user application code
+world app {
+    // Import runtime services
+    import symbols;
+    import query;
+    import mutation;
+
+    // Standard WASI imports for I/O
+    // import wasi:filesystem/types;
+    // import wasi:http/outgoing-handler;
+
+    // Application entry point
+    export main: func();
+}
+
+// World for the query engine module
+world query-engine {
+    // Query engine imports symbol storage
+    import symbols;
+
+    // Query engine exports query interface
+    export query;
+}
+
+// World for the symbol storage module
+world symbol-store {
+    // Symbol store exports the symbols interface
+    export symbols;
+}
+
+// World for the mutation module
+world mutator {
+    // Mutator imports symbol storage
+    import symbols;
+
+    // Mutator exports mutation interface
+    export mutation;
+}

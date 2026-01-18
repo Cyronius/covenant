@@ -13,6 +13,10 @@ pub struct Snippet {
     pub kind: SnippetKind,
     pub notes: Vec<Note>,
     pub sections: Vec<Section>,
+    /// For extern-impl: the abstract snippet ID this implements
+    pub implements: Option<String>,
+    /// For extern-impl: the target platform
+    pub platform: Option<String>,
     pub span: Span,
 }
 
@@ -25,6 +29,10 @@ pub enum SnippetKind {
     Module,
     Database,
     Extern,
+    /// Platform-abstract extern declaration (declares interface + supported platforms)
+    ExternAbstract,
+    /// Platform-specific extern implementation (provides binding for one platform)
+    ExternImpl,
     Test,
     Data,
 }
@@ -51,6 +59,8 @@ pub enum Section {
     Schema(SchemaSection),
     Types(TypesSection),
     Tools(ToolsSection),
+    /// Platform declarations for extern-abstract snippets
+    Platforms(PlatformsSection),
 }
 
 // ===== Effects Section =====
@@ -66,6 +76,49 @@ pub struct EffectDecl {
     pub name: String,
     pub params: Vec<String>,
     pub span: Span,
+}
+
+// ===== Platforms Section =====
+
+/// Declares which platforms an extern-abstract snippet supports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformsSection {
+    pub platforms: Vec<PlatformDecl>,
+    pub span: Span,
+}
+
+/// A single platform declaration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformDecl {
+    pub name: String,
+    pub span: Span,
+}
+
+/// Known compilation targets
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Platform {
+    Browser,
+    Node,
+    Wasi,
+}
+
+impl Platform {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "browser" => Some(Platform::Browser),
+            "node" => Some(Platform::Node),
+            "wasi" => Some(Platform::Wasi),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Platform::Browser => "browser",
+            Platform::Node => "node",
+            Platform::Wasi => "wasi",
+        }
+    }
 }
 
 // ===== Requirements Section =====
@@ -227,23 +280,152 @@ pub struct ComputeStep {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {
+    // Arithmetic
     Add,
     Sub,
     Mul,
     Div,
     Mod,
+
+    // Comparison
     Equals,
     NotEquals,
     Less,
     Greater,
     LessEq,
     GreaterEq,
+
+    // Logical
     And,
     Or,
     Not,
     Neg,
+
+    // String operations (existing)
     Concat,
     Contains,
+
+    // String operations (new)
+    Slice,
+    Upper,
+    Lower,
+    Trim,
+    TrimStart,
+    TrimEnd,
+    Replace,
+    Split,
+    Join,
+    Repeat,
+    StrLen,
+    ByteLen,
+    IsEmpty,
+    StartsWith,
+    EndsWith,
+    IndexOf,
+    CharAt,
+    StrReverse,
+    PadStart,
+    PadEnd,
+
+    // Numeric operations
+    Abs,
+    Min,
+    Max,
+    Clamp,
+    Pow,
+    Sqrt,
+    Floor,
+    Ceil,
+    Round,
+    Trunc,
+    Sign,
+
+    // Bitwise operations
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
+    BitShl,
+    BitShr,
+    BitUshr,
+
+    // Conversion operations
+    ToInt,
+    ToFloat,
+    ToString,
+    ParseInt,
+    ParseFloat,
+
+    // List operations
+    ListLen,
+    ListGet,
+    ListFirst,
+    ListLast,
+    ListAppend,
+    ListPrepend,
+    ListConcat,
+    ListSlice,
+    ListReverse,
+    ListTake,
+    ListDrop,
+    ListContains,
+    ListIndexOf,
+    ListIsEmpty,
+    ListSort,
+    ListDedup,
+    ListFlatten,
+
+    // Map operations
+    MapLen,
+    MapGet,
+    MapHas,
+    MapInsert,
+    MapRemove,
+    MapKeys,
+    MapValues,
+    MapEntries,
+    MapMerge,
+    MapIsEmpty,
+
+    // Set operations
+    SetLen,
+    SetHas,
+    SetAdd,
+    SetRemove,
+    SetUnion,
+    SetIntersect,
+    SetDiff,
+    SetSymmetricDiff,
+    SetIsSubset,
+    SetIsSuperset,
+    SetIsEmpty,
+    SetToList,
+
+    // DateTime operations
+    DtYear,
+    DtMonth,
+    DtDay,
+    DtHour,
+    DtMinute,
+    DtSecond,
+    DtWeekday,
+    DtUnix,
+    DtAddDays,
+    DtAddHours,
+    DtAddMinutes,
+    DtAddSeconds,
+    DtDiff,
+    DtFormat,
+
+    // Bytes operations
+    BytesLen,
+    BytesGet,
+    BytesSlice,
+    BytesConcat,
+    BytesToString,
+    BytesToBase64,
+    BytesToHex,
+    BytesIsEmpty,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

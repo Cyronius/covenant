@@ -372,6 +372,8 @@ fn snippet_kind_str(kind: SnippetKind) -> String {
         SnippetKind::Module => "module".to_string(),
         SnippetKind::Database => "database".to_string(),
         SnippetKind::Extern => "extern".to_string(),
+        SnippetKind::ExternAbstract => "extern-abstract".to_string(),
+        SnippetKind::ExternImpl => "extern-impl".to_string(),
         SnippetKind::Test => "test".to_string(),
         SnippetKind::Data => "data".to_string(),
     }

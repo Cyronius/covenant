@@ -1985,6 +1985,15 @@ impl<'a> Parser<'a> {
         let id = self.parse_attribute("id")?;
         let kind = self.parse_snippet_kind()?;
 
+        // For extern-impl snippets: parse implements="..." and platform="..."
+        let (implements, platform) = if kind == SnippetKind::ExternImpl {
+            let implements = self.parse_optional_attribute("implements")?;
+            let platform = self.parse_optional_attribute("platform")?;
+            (implements, platform)
+        } else {
+            (None, None)
+        };
+
         // Parse optional notes
         let mut notes = Vec::new();
         while self.at(TokenKind::Note) {
@@ -2005,6 +2014,8 @@ impl<'a> Parser<'a> {
             kind,
             notes,
             sections,
+            implements,
+            platform,
             span: start.merge(end),
         })
     }
@@ -2041,6 +2052,31 @@ impl<'a> Parser<'a> {
         self.consume_string_literal()
     }
 
+    /// Parse an optional attribute like `implements="..."` or `platform="..."`
+    /// Returns None if the attribute isn't present
+    fn parse_optional_attribute(&mut self, expected_name: &str) -> Result<Option<String>, ParseError> {
+        // Check if the next token is an identifier or keyword matching our expected name
+        let is_match = match self.peek() {
+            TokenKind::Ident => {
+                // Get the token text to check if it matches
+                let token = self.current();
+                let text = &self.source[token.span.start..token.span.end];
+                text == expected_name
+            }
+            // Handle attribute names that are also keywords
+            TokenKind::Platform => expected_name == "platform",
+            _ => false,
+        };
+
+        if is_match {
+            self.advance();
+            self.consume(TokenKind::Eq)?;
+            Ok(Some(self.consume_string_literal()?))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_snippet_kind(&mut self) -> Result<SnippetKind, ParseError> {
         let kind_str = self.parse_attribute("kind")?;
         match kind_str.as_str() {
@@ -2050,6 +2086,8 @@ impl<'a> Parser<'a> {
             "module" => Ok(SnippetKind::Module),
             "database" => Ok(SnippetKind::Database),
             "extern" => Ok(SnippetKind::Extern),
+            "extern-abstract" => Ok(SnippetKind::ExternAbstract),
+            "extern-impl" => Ok(SnippetKind::ExternImpl),
             "test" => Ok(SnippetKind::Test),
             "data" => Ok(SnippetKind::Data),
             _ => Err(ParseError::InvalidSnippetKind {
@@ -2102,6 +2140,7 @@ impl<'a> Parser<'a> {
             TokenKind::Content => Ok(Section::Content(self.parse_content_section()?)),
             TokenKind::Schema => Ok(Section::Schema(self.parse_schema_section()?)),
             TokenKind::Types => Ok(Section::Types(self.parse_types_section()?)),
+            TokenKind::Platforms => Ok(Section::Platforms(self.parse_platforms_section()?)),
             _ => Err(ParseError::UnexpectedSection {
                 section: self.peek().describe().to_string(),
                 span: self.span(),
@@ -2643,18 +2682,144 @@ impl<'a> Parser<'a> {
                 Ok(Operation::Not)
             }
             TokenKind::Ident => {
-                // Also support identifiers for extended operations like less_eq
+                // Also support identifiers for extended operations
                 let op_name = self.consume_text(TokenKind::Ident)?;
                 match op_name.as_str() {
+                    // Comparison
                     "less_eq" => Ok(Operation::LessEq),
                     "less" => Ok(Operation::Less),
                     "greater_eq" => Ok(Operation::GreaterEq),
                     "greater" => Ok(Operation::Greater),
-                    "concat" => Ok(Operation::Concat),
-                    "mod" => Ok(Operation::Mod),
-                    "contains" => Ok(Operation::Contains),
-                    "neg" => Ok(Operation::Neg),
                     "not_equals" => Ok(Operation::NotEquals),
+
+                    // Arithmetic
+                    "mod" => Ok(Operation::Mod),
+                    "neg" => Ok(Operation::Neg),
+
+                    // String operations
+                    "concat" => Ok(Operation::Concat),
+                    "contains" => Ok(Operation::Contains),
+                    "slice" => Ok(Operation::Slice),
+                    "upper" => Ok(Operation::Upper),
+                    "lower" => Ok(Operation::Lower),
+                    "trim" => Ok(Operation::Trim),
+                    "trim_start" => Ok(Operation::TrimStart),
+                    "trim_end" => Ok(Operation::TrimEnd),
+                    "replace" => Ok(Operation::Replace),
+                    "split" => Ok(Operation::Split),
+                    "join" => Ok(Operation::Join),
+                    "repeat" => Ok(Operation::Repeat),
+                    "str_len" => Ok(Operation::StrLen),
+                    "byte_len" => Ok(Operation::ByteLen),
+                    "is_empty" => Ok(Operation::IsEmpty),
+                    "starts_with" => Ok(Operation::StartsWith),
+                    "ends_with" => Ok(Operation::EndsWith),
+                    "index_of" => Ok(Operation::IndexOf),
+                    "char_at" => Ok(Operation::CharAt),
+                    "str_reverse" => Ok(Operation::StrReverse),
+                    "pad_start" => Ok(Operation::PadStart),
+                    "pad_end" => Ok(Operation::PadEnd),
+
+                    // Numeric operations
+                    "abs" => Ok(Operation::Abs),
+                    "min" => Ok(Operation::Min),
+                    "max" => Ok(Operation::Max),
+                    "clamp" => Ok(Operation::Clamp),
+                    "pow" => Ok(Operation::Pow),
+                    "sqrt" => Ok(Operation::Sqrt),
+                    "floor" => Ok(Operation::Floor),
+                    "ceil" => Ok(Operation::Ceil),
+                    "round" => Ok(Operation::Round),
+                    "trunc" => Ok(Operation::Trunc),
+                    "sign" => Ok(Operation::Sign),
+
+                    // Bitwise operations
+                    "bit_and" => Ok(Operation::BitAnd),
+                    "bit_or" => Ok(Operation::BitOr),
+                    "bit_xor" => Ok(Operation::BitXor),
+                    "bit_not" => Ok(Operation::BitNot),
+                    "bit_shl" => Ok(Operation::BitShl),
+                    "bit_shr" => Ok(Operation::BitShr),
+                    "bit_ushr" => Ok(Operation::BitUshr),
+
+                    // Conversion operations
+                    "to_int" => Ok(Operation::ToInt),
+                    "to_float" => Ok(Operation::ToFloat),
+                    "to_string" => Ok(Operation::ToString),
+                    "parse_int" => Ok(Operation::ParseInt),
+                    "parse_float" => Ok(Operation::ParseFloat),
+
+                    // List operations
+                    "list_len" => Ok(Operation::ListLen),
+                    "list_get" => Ok(Operation::ListGet),
+                    "list_first" => Ok(Operation::ListFirst),
+                    "list_last" => Ok(Operation::ListLast),
+                    "list_append" => Ok(Operation::ListAppend),
+                    "list_prepend" => Ok(Operation::ListPrepend),
+                    "list_concat" => Ok(Operation::ListConcat),
+                    "list_slice" => Ok(Operation::ListSlice),
+                    "list_reverse" => Ok(Operation::ListReverse),
+                    "list_take" => Ok(Operation::ListTake),
+                    "list_drop" => Ok(Operation::ListDrop),
+                    "list_contains" => Ok(Operation::ListContains),
+                    "list_index_of" => Ok(Operation::ListIndexOf),
+                    "list_is_empty" => Ok(Operation::ListIsEmpty),
+                    "list_sort" => Ok(Operation::ListSort),
+                    "list_dedup" => Ok(Operation::ListDedup),
+                    "list_flatten" => Ok(Operation::ListFlatten),
+
+                    // Map operations
+                    "map_len" => Ok(Operation::MapLen),
+                    "map_get" => Ok(Operation::MapGet),
+                    "map_has" => Ok(Operation::MapHas),
+                    "map_insert" => Ok(Operation::MapInsert),
+                    "map_remove" => Ok(Operation::MapRemove),
+                    "map_keys" => Ok(Operation::MapKeys),
+                    "map_values" => Ok(Operation::MapValues),
+                    "map_entries" => Ok(Operation::MapEntries),
+                    "map_merge" => Ok(Operation::MapMerge),
+                    "map_is_empty" => Ok(Operation::MapIsEmpty),
+
+                    // Set operations
+                    "set_len" => Ok(Operation::SetLen),
+                    "set_has" => Ok(Operation::SetHas),
+                    "set_add" => Ok(Operation::SetAdd),
+                    "set_remove" => Ok(Operation::SetRemove),
+                    "set_union" => Ok(Operation::SetUnion),
+                    "set_intersect" => Ok(Operation::SetIntersect),
+                    "set_diff" => Ok(Operation::SetDiff),
+                    "set_symmetric_diff" => Ok(Operation::SetSymmetricDiff),
+                    "set_is_subset" => Ok(Operation::SetIsSubset),
+                    "set_is_superset" => Ok(Operation::SetIsSuperset),
+                    "set_is_empty" => Ok(Operation::SetIsEmpty),
+                    "set_to_list" => Ok(Operation::SetToList),
+
+                    // DateTime operations
+                    "dt_year" => Ok(Operation::DtYear),
+                    "dt_month" => Ok(Operation::DtMonth),
+                    "dt_day" => Ok(Operation::DtDay),
+                    "dt_hour" => Ok(Operation::DtHour),
+                    "dt_minute" => Ok(Operation::DtMinute),
+                    "dt_second" => Ok(Operation::DtSecond),
+                    "dt_weekday" => Ok(Operation::DtWeekday),
+                    "dt_unix" => Ok(Operation::DtUnix),
+                    "dt_add_days" => Ok(Operation::DtAddDays),
+                    "dt_add_hours" => Ok(Operation::DtAddHours),
+                    "dt_add_minutes" => Ok(Operation::DtAddMinutes),
+                    "dt_add_seconds" => Ok(Operation::DtAddSeconds),
+                    "dt_diff" => Ok(Operation::DtDiff),
+                    "dt_format" => Ok(Operation::DtFormat),
+
+                    // Bytes operations
+                    "bytes_len" => Ok(Operation::BytesLen),
+                    "bytes_get" => Ok(Operation::BytesGet),
+                    "bytes_slice" => Ok(Operation::BytesSlice),
+                    "bytes_concat" => Ok(Operation::BytesConcat),
+                    "bytes_to_string" => Ok(Operation::BytesToString),
+                    "bytes_to_base64" => Ok(Operation::BytesToBase64),
+                    "bytes_to_hex" => Ok(Operation::BytesToHex),
+                    "bytes_is_empty" => Ok(Operation::BytesIsEmpty),
+
                     _ => Err(ParseError::InvalidOperation {
                         name: op_name,
                         span: self.span(),
@@ -3673,6 +3838,37 @@ impl<'a> Parser<'a> {
         Ok(EffectDecl {
             name,
             params: Vec::new(),
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_platforms_section(&mut self) -> Result<PlatformsSection, ParseError> {
+        let start = self.span();
+        self.consume(TokenKind::Platforms)?; // "platforms" section keyword
+
+        let mut platforms = Vec::new();
+        while self.at(TokenKind::Platform) {
+            platforms.push(self.parse_platform_decl()?);
+        }
+
+        self.consume(TokenKind::End)?;
+        let end = self.span();
+
+        Ok(PlatformsSection {
+            platforms,
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_platform_decl(&mut self) -> Result<PlatformDecl, ParseError> {
+        let start = self.span();
+        self.consume(TokenKind::Platform)?;
+        self.consume(TokenKind::Eq)?;
+        let name = self.consume_string_literal()?;
+        let end = self.span();
+
+        Ok(PlatformDecl {
+            name,
             span: start.merge(end),
         })
     }

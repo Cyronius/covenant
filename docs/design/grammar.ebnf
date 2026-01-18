@@ -136,14 +136,59 @@ step_body      = compute_body | call_body | query_body | bind_body | return_body
 
 (* --- Compute: arithmetic and logic --- *)
 compute_body   = "op" "=" binary_op input input
-               | "op" "=" unary_op input ;
+               | "op" "=" unary_op input
+               | "op" "=" ternary_op input input input ;
 
-binary_op      = "add" | "sub" | "mul" | "div" | "mod"
+binary_op      = (* Arithmetic *)
+                 "add" | "sub" | "mul" | "div" | "mod"
+                 (* Comparison *)
                | "equals" | "not_equals" | "less" | "greater" | "less_eq" | "greater_eq"
+                 (* Logical *)
                | "and" | "or"
-               | "concat" | "contains" ;
+                 (* String (binary) *)
+               | "concat" | "contains" | "starts_with" | "ends_with" | "index_of"
+               | "replace" | "split" | "join" | "repeat" | "pad_start" | "pad_end"
+                 (* Numeric (binary) *)
+               | "min" | "max" | "clamp" | "pow"
+                 (* Bitwise (binary) *)
+               | "bit_and" | "bit_or" | "bit_xor" | "bit_shl" | "bit_shr" | "bit_ushr"
+                 (* List (binary) *)
+               | "list_get" | "list_append" | "list_prepend" | "list_concat"
+               | "list_slice" | "list_take" | "list_drop" | "list_contains" | "list_index_of"
+                 (* Map (binary) *)
+               | "map_get" | "map_has" | "map_insert" | "map_remove" | "map_merge"
+                 (* Set (binary) *)
+               | "set_has" | "set_add" | "set_remove" | "set_union" | "set_intersect"
+               | "set_diff" | "set_symmetric_diff" | "set_is_subset" | "set_is_superset"
+                 (* DateTime (binary) *)
+               | "dt_add_days" | "dt_add_hours" | "dt_add_minutes" | "dt_add_seconds" | "dt_diff" | "dt_format"
+                 (* Bytes (binary) *)
+               | "bytes_get" | "bytes_slice" | "bytes_concat" ;
 
-unary_op       = "not" | "neg" ;
+unary_op       = (* Logical *)
+                 "not" | "neg"
+                 (* String (unary) *)
+               | "str_len" | "byte_len" | "is_empty" | "upper" | "lower"
+               | "trim" | "trim_start" | "trim_end" | "str_reverse" | "char_at"
+                 (* Numeric (unary) *)
+               | "abs" | "sqrt" | "floor" | "ceil" | "round" | "trunc" | "sign"
+               | "bit_not"
+                 (* Conversion *)
+               | "to_int" | "to_float" | "to_string" | "parse_int" | "parse_float"
+                 (* List (unary) *)
+               | "list_len" | "list_first" | "list_last" | "list_reverse"
+               | "list_is_empty" | "list_sort" | "list_dedup" | "list_flatten"
+                 (* Map (unary) *)
+               | "map_len" | "map_keys" | "map_values" | "map_entries" | "map_is_empty"
+                 (* Set (unary) *)
+               | "set_len" | "set_is_empty" | "set_to_list"
+                 (* DateTime (unary) *)
+               | "dt_year" | "dt_month" | "dt_day" | "dt_hour" | "dt_minute"
+               | "dt_second" | "dt_weekday" | "dt_unix"
+                 (* Bytes (unary) *)
+               | "bytes_len" | "bytes_is_empty" | "bytes_to_string" | "bytes_to_base64" | "bytes_to_hex" ;
+
+ternary_op     = "slice" | "clamp" | "replace" ; (* 3 inputs: slice(str, start, end), clamp(val, min, max), replace(str, find, repl) *)
 
 input          = "input" input_source ;
 input_source   = "var" "=" STRING
@@ -454,7 +499,16 @@ COMMENT        = "//" { any_char_except_newline } NEWLINE ;
    Requirements: req, text, priority, status
    Tools: tool, contract, idempotent, timeout, retry, auth
    Steps: step, kind, as, op, input, var, lit, from, of, into, set, construct, item
-   Operators: add, sub, mul, div, mod, equals, not_equals, less, greater, less_eq, greater_eq, and, or, not, neg, concat, contains
+   Operators (core): add, sub, mul, div, mod, equals, not_equals, less, greater, less_eq, greater_eq, and, or, not, neg, concat, contains
+   Operators (string): slice, upper, lower, trim, trim_start, trim_end, replace, split, join, repeat, str_len, byte_len, is_empty, starts_with, ends_with, index_of, char_at, str_reverse, pad_start, pad_end
+   Operators (numeric): abs, min, max, clamp, pow, sqrt, floor, ceil, round, trunc, sign
+   Operators (bitwise): bit_and, bit_or, bit_xor, bit_not, bit_shl, bit_shr, bit_ushr
+   Operators (conversion): to_int, to_float, to_string, parse_int, parse_float
+   Operators (list): list_len, list_get, list_first, list_last, list_append, list_prepend, list_concat, list_slice, list_reverse, list_take, list_drop, list_contains, list_index_of, list_is_empty, list_sort, list_dedup, list_flatten
+   Operators (map): map_len, map_get, map_has, map_insert, map_remove, map_keys, map_values, map_entries, map_merge, map_is_empty
+   Operators (set): set_len, set_has, set_add, set_remove, set_union, set_intersect, set_diff, set_symmetric_diff, set_is_subset, set_is_superset, set_is_empty, set_to_list
+   Operators (datetime): dt_year, dt_month, dt_day, dt_hour, dt_minute, dt_second, dt_weekday, dt_unix, dt_add_days, dt_add_hours, dt_add_minutes, dt_add_seconds, dt_diff, dt_format
+   Operators (bytes): bytes_len, bytes_get, bytes_slice, bytes_concat, bytes_to_string, bytes_to_base64, bytes_to_hex, bytes_is_empty
    Control: if, then, else, match, case, for, in, return, bind, mut
    Query: query, target, select, all, from, join, to, on, where, order, by, dir, asc, desc, limit, offset, follow, rel
    Dialects: dialect (value is freeform string for extensibility)

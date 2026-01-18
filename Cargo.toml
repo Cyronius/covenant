@@ -17,6 +17,9 @@ members = [
     "crates/covenant-codegen",
     "crates/covenant-storage",
     "crates/covenant-llm",
+    "crates/covenant-requirements",
+    "crates/covenant-optimizer",
+    "crates/covenant-runtime",
     "crates/covenant-cli",
 ]
 
@@ -37,6 +40,9 @@ covenant-graph = { path = "crates/covenant-graph" }
 covenant-codegen = { path = "crates/covenant-codegen" }
 covenant-storage = { path = "crates/covenant-storage" }
 covenant-llm = { path = "crates/covenant-llm" }
+covenant-requirements = { path = "crates/covenant-requirements" }
+covenant-optimizer = { path = "crates/covenant-optimizer" }
+covenant-runtime = { path = "crates/covenant-runtime" }
 
 # External dependencies
 logos = "0.14"

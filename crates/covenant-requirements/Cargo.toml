@@ -1,0 +1,13 @@
+[package]
+name = "covenant-requirements"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+covenant-parser = { workspace = true }

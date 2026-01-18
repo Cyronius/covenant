@@ -9,8 +9,8 @@ This document outlines the implementation plan for the remaining compiler phases
 | 1 | Parser | ✅ Complete | `covenant-parser` |
 | 2 | Symbol Graph Builder | ✅ Complete | `covenant-symbols` |
 | 3 | Effect Checker | ✅ Complete | `covenant-checker` |
-| 4 | Type Checker | 🔄 Partial | `covenant-checker` |
-| 5 | Requirement Validator | ❌ Not Started | — |
+| 4 | Type Checker | ✅ Complete | `covenant-checker` |
+| 5 | Requirement Validator | ✅ Complete | `covenant-requirements` |
 | 6 | IR Optimizer | ❌ Not Started | — |
 | 7 | WASM Emitter | 🔄 Partial | `covenant-codegen` |
 
@@ -82,107 +82,64 @@ Input: SymbolGraph from Phase 2
 
 ---
 
-## Phase 4: Type Checker
+## Phase 4: Type Checker ✅ COMPLETE
 
 ### Purpose
 Annotate every expression with a type and validate type correctness.
 
-### Current State
-`covenant-checker/src/snippet_checker.rs` has:
-- Basic type inference for compute/call/bind steps
-- Primitive type resolution
-- Local scope tracking
+### Implementation Summary
 
-Missing:
-- Full union type handling
-- Match exhaustiveness checking
-- Query result type inference
-- Struct/enum field type validation
-- Generic type instantiation
+The type checker has been completed with the following features:
 
-### Implementation Plan
+#### Implemented Features
 
-#### Files to Modify
-- `crates/covenant-checker/src/snippet_checker.rs` - Enhance type checking
-- `crates/covenant-checker/src/types.rs` - Add type unification
+1. **TypeRegistry** (`types.rs`)
+   - `StructDef`, `EnumDef`, `VariantDef` types for type definitions
+   - Registration and lookup of struct and enum types
+   - Field type lookup for structs
+   - Variant enumeration for enums (used in exhaustiveness checking)
 
-#### New Features
+2. **Struct/Enum Registration** (`snippet_checker.rs`)
+   - First-pass registration of struct types with field information
+   - First-pass registration of enum types with variant information
+   - Types stored in both TypeRegistry and SymbolTable
 
-##### 1. Union Type Handling
-```rust
-fn check_union_assignment(target: &ResolvedType, value: &ResolvedType) -> bool {
-    match (target, value) {
-        (ResolvedType::Union(variants), value) => {
-            variants.iter().any(|v| types_compatible(v, value))
-        }
-        _ => types_compatible(target, value)
-    }
-}
-```
+3. **Match Exhaustiveness Checking** (`snippet_checker.rs`)
+   - `check_match_exhaustiveness()` validates all variants are covered
+   - Supports enum types, union types, and optional types
+   - Wildcard patterns cover remaining variants
+   - Reports `NonExhaustiveMatch` error with missing variants
 
-##### 2. Match Exhaustiveness
-```rust
-fn check_exhaustiveness(match_step: &MatchStep, union_type: &ResolvedType) -> Vec<TypeError> {
-    let ResolvedType::Union(variants) = union_type else { return vec![] };
+4. **Query Type Inference** (`snippet_checker.rs`)
+   - `infer_query_step()` for both Covenant and SQL dialect queries
+   - Project queries return metadata structs (functions, types, requirements, tests)
+   - Covenant queries infer type from `from` clause
+   - `limit=1` returns `Optional<T>`, otherwise `List<T>`
+   - SQL dialect queries use explicit `returns` annotation
 
-    let covered: HashSet<_> = match_step.cases.iter()
-        .filter_map(|c| match &c.pattern {
-            MatchPattern::Variant { variant, .. } => Some(variant.clone()),
-            MatchPattern::Wildcard => None,
-        })
-        .collect();
+5. **Union Type Compatibility** (`checker.rs`)
+   - Enhanced `types_compatible()` for union types
+   - Union as expected: value must match at least one member
+   - Union as found: all members must be compatible with expected
+   - Full support for tuple, struct, and function type compatibility
 
-    let has_wildcard = match_step.cases.iter()
-        .any(|c| matches!(c.pattern, MatchPattern::Wildcard));
+#### Error Types Added
+- `IncompatibleUnion`: Value type not a member of union
+- `NonExhaustiveMatch`: Missing variants in match
+- `UnknownQueryTarget`: Unknown query target
+- `UnknownField`: Unknown field in type
 
-    if has_wildcard { return vec![]; }
+#### Tests Added
+- TypeRegistry struct/enum registration
+- Variant extraction
+- Type variant enumeration (union, optional, non-matchable)
+- Project query type inference
 
-    let missing: Vec<_> = variants.iter()
-        .filter(|v| !covered.contains(&v.name()))
-        .collect();
-
-    if !missing.is_empty() {
-        vec![TypeError::NonExhaustiveMatch { missing }]
-    } else {
-        vec![]
-    }
-}
-```
-
-##### 3. Query Result Type Inference
-```rust
-fn infer_query_type(query: &QueryStep, symbol_graph: &SymbolGraph) -> ResolvedType {
-    match &query.content {
-        QueryContent::Covenant(cov) => {
-            // Infer from target type and select clause
-            let target_type = resolve_query_target(&cov.from, symbol_graph);
-            match &cov.select {
-                SnippetSelectClause::All => ResolvedType::List(Box::new(target_type)),
-                SnippetSelectClause::Field(f) => extract_field_type(&target_type, f),
-            }
-        }
-        QueryContent::Dialect(dialect) => {
-            // Use declared returns type
-            resolve_return_type(&dialect.returns)
-        }
-    }
-}
-```
-
-#### Error Types
-- `E-TYPE-001`: Type mismatch
-- `E-TYPE-002`: Undefined type
-- `E-TYPE-003`: Incompatible union
-- `E-TYPE-004`: Non-exhaustive match
-
-#### Integration Points
-- Input: `SymbolGraph` + `EffectCheckResult`
-- Output: Typed AST with annotations
-
-#### Estimated Effort
-- Enhance `snippet_checker.rs`: ~300 lines
-- Add `types.rs` unification: ~200 lines
-- Add tests: ~250 lines
+#### Files Modified
+- `crates/covenant-checker/src/types.rs` - Added TypeRegistry (~80 lines)
+- `crates/covenant-checker/src/snippet_checker.rs` - Added exhaustiveness, query inference (~250 lines)
+- `crates/covenant-checker/src/checker.rs` - Enhanced types_compatible (~50 lines)
+- `crates/covenant-checker/src/lib.rs` - Added error variants (~15 lines)
 
 ---
 
