@@ -313,6 +313,10 @@ impl SymbolExtractor {
                     refs.insert(traverse.target.clone());
                 }
             }
+            StepKind::Construct(construct) => {
+                // Struct construction references the struct type
+                self.collect_type_refs(&construct.ty, refs);
+            }
             // Compute and Bind don't introduce new calls or type refs
             StepKind::Compute(_) | StepKind::Bind(_) => {}
         }

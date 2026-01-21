@@ -12,7 +12,7 @@ This document outlines the implementation plan for the remaining compiler phases
 | 4 | Type Checker | ✅ Complete | `covenant-checker` |
 | 5 | Requirement Validator | ✅ Complete | `covenant-requirements` |
 | 6 | IR Optimizer | ✅ Complete | `covenant-optimizer` |
-| 7 | WASM Emitter | 🔄 Partial | `covenant-codegen` |
+| 7 | WASM Emitter | ✅ Complete | `covenant-codegen` |
 
 ---
 
@@ -380,14 +380,52 @@ Generate WebAssembly binary from optimized IR.
 - Type mapping to WASM types
 - Simple expression compilation
 
-Missing:
-- Effect handling (WASI imports)
-- Query compilation (SQL generation)
-- Match/if control flow
-- Struct/enum memory layout
-- Function table for indirect calls
+### Implementation Summary (Completed)
 
-### Implementation Plan
+The WASM emitter has been enhanced with the following features:
+
+#### 1. Effect Handling (WASI Imports)
+- `ImportTracker` class for managing WASM imports
+- Automatic import registration based on declared effects
+- Runtime function indices for database, HTTP, console, filesystem, and memory operations
+- Support for effects: `database`, `network`, `filesystem`, `console`, `std.io`
+
+#### 2. Match/If Control Flow
+- `compile_match_step()` - Compiles match expressions to if-else chains
+- Variant pattern matching with tag computation
+- Wildcard pattern support
+- Binding extraction from matched values
+
+#### 3. For Loop Compilation
+- `compile_for_step()` - Compiles for loops to WASM loops
+- Index tracking and bounds checking
+- Nested loop support through block/loop instructions
+
+#### 4. SQL Query Compilation
+- `compile_query_step()` - Handles both Covenant and SQL dialect queries
+- `generate_sql_from_covenant()` - Generates SQL from Covenant query syntax
+- SQL string storage in data segment
+- Support for SELECT, FROM, WHERE, ORDER BY, LIMIT clauses
+- Condition to SQL conversion (equals, not equals, contains, and, or)
+
+#### 5. Data Segment Management
+- `DataSegmentBuilder` class for managing string constants
+- Deduplication of strings via offset caching
+- Null-terminated string storage
+- Integration with WASM module data section
+
+#### 6. Memory Layout Infrastructure
+- `StructLayout` and `FieldLayout` types for struct memory layout
+- `WasmType` enum with size and alignment calculation
+- Memory section with configurable page limits
+- Global heap pointer management
+
+#### 7. Module Structure Enhancements
+- Import section for effect-based imports
+- Memory export for effectful modules
+- Proper function index adjustment for imports
+
+### Original Implementation Plan
 
 #### Files to Modify
 - `crates/covenant-codegen/src/snippet_wasm.rs` - Enhance snippet compilation

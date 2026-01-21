@@ -267,6 +267,7 @@ pub enum StepKind {
     Delete(DeleteStep),
     Transaction(TransactionStep),
     Traverse(TraverseStep),
+    Construct(StructConstruction),
 }
 
 // ===== Step Types =====

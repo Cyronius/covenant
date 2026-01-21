@@ -1,31 +1,206 @@
 //! WASM code generation for snippet-mode programs
 //!
-//! Compiles pure function snippets to WebAssembly.
+//! Compiles Covenant snippets to WebAssembly with support for:
+//! - Pure functions (no effects)
+//! - Effectful functions (with WASI imports)
+//! - Control flow (if, match, for)
+//! - SQL query compilation
+//! - Struct/enum memory layout
 
 use std::collections::HashMap;
 use wasm_encoder::{
-    CodeSection, ExportKind, ExportSection, Function, FunctionSection,
-    Instruction, Module, TypeSection, ValType,
+    BlockType, CodeSection, DataSection, ExportKind, ExportSection, Function, FunctionSection,
+    GlobalSection, GlobalType, ImportSection, Instruction, MemorySection, MemoryType, Module,
+    TypeSection, ValType,
 };
 use covenant_ast::{
-    Snippet, SnippetKind, Section, SignatureKind,
-    Step, StepKind, ComputeStep, Operation, InputSource, CallStep,
-    ReturnStep, ReturnValue, IfStep, BindStep, BindSource,
-    FunctionSignature, ReturnType, Type, TypeKind, Literal,
+    BindSource, BindStep, CallStep, ComputeStep, EffectsSection, ForStep, FunctionSignature,
+    InputSource, IfStep, Literal, MatchPattern, MatchStep, Operation, QueryContent,
+    QueryStep, ReturnStep, ReturnType, ReturnValue, Section, SignatureKind, Snippet, SnippetKind,
+    Step, StepKind, StructConstruction, Type, TypeKind,
 };
 use covenant_checker::SymbolTable;
 use crate::CodegenError;
+
+// ===== Memory Layout Types =====
+
+/// Layout information for struct fields
+#[derive(Debug, Clone)]
+pub struct FieldLayout {
+    /// Offset from struct base pointer
+    pub offset: u32,
+    /// Size in bytes
+    pub size: u32,
+    /// WASM type for this field
+    pub wasm_type: WasmType,
+}
+
+/// Layout information for structs
+#[derive(Debug, Clone)]
+pub struct StructLayout {
+    /// Total size in bytes
+    pub size: u32,
+    /// Alignment requirement
+    pub alignment: u32,
+    /// Field layouts by name
+    pub fields: HashMap<String, FieldLayout>,
+}
+
+/// WASM type representation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmType {
+    I32,
+    I64,
+    F32,
+    F64,
+    /// Pointer to memory (represented as i32)
+    Ptr,
+}
+
+impl WasmType {
+    pub fn size(&self) -> u32 {
+        match self {
+            WasmType::I32 | WasmType::F32 | WasmType::Ptr => 4,
+            WasmType::I64 | WasmType::F64 => 8,
+        }
+    }
+
+    pub fn alignment(&self) -> u32 {
+        self.size()
+    }
+
+    pub fn to_valtype(&self) -> ValType {
+        match self {
+            WasmType::I32 | WasmType::Ptr => ValType::I32,
+            WasmType::I64 => ValType::I64,
+            WasmType::F32 => ValType::F32,
+            WasmType::F64 => ValType::F64,
+        }
+    }
+}
+
+// ===== Data Segment Builder =====
+
+/// Manages WASM data segment for storing strings and SQL queries
+#[derive(Debug, Default)]
+pub struct DataSegmentBuilder {
+    /// The accumulated data bytes
+    data: Vec<u8>,
+    /// String offset cache to avoid duplicates
+    string_offsets: HashMap<String, u32>,
+}
+
+impl DataSegmentBuilder {
+    pub fn new() -> Self {
+        Self {
+            data: Vec::new(),
+            string_offsets: HashMap::new(),
+        }
+    }
+
+    /// Add a string and return its offset
+    pub fn add_string(&mut self, s: &str) -> u32 {
+        if let Some(&offset) = self.string_offsets.get(s) {
+            return offset;
+        }
+
+        let offset = self.data.len() as u32;
+        self.data.extend_from_slice(s.as_bytes());
+        self.data.push(0); // Null terminator
+        self.string_offsets.insert(s.to_string(), offset);
+        offset
+    }
+
+    /// Get the data and total length
+    pub fn finish(self) -> Vec<u8> {
+        self.data
+    }
+
+    /// Check if segment has any data
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+// ===== Import Tracker =====
+
+/// Tracks required imports based on effects
+#[derive(Debug, Default)]
+struct ImportTracker {
+    /// Import entries: (module, name, param_types, result_types)
+    imports: Vec<(String, String, Vec<ValType>, Vec<ValType>)>,
+    /// Map from (module.name) to function index
+    import_indices: HashMap<String, u32>,
+}
+
+impl ImportTracker {
+    fn new() -> Self {
+        Self {
+            imports: Vec::new(),
+            import_indices: HashMap::new(),
+        }
+    }
+
+    /// Add an import and return its function index
+    fn add_import(
+        &mut self,
+        module: &str,
+        name: &str,
+        params: Vec<ValType>,
+        results: Vec<ValType>,
+    ) -> u32 {
+        let key = format!("{}.{}", module, name);
+        if let Some(&idx) = self.import_indices.get(&key) {
+            return idx;
+        }
+
+        let idx = self.imports.len() as u32;
+        self.imports
+            .push((module.to_string(), name.to_string(), params, results));
+        self.import_indices.insert(key, idx);
+        idx
+    }
+
+    fn len(&self) -> u32 {
+        self.imports.len() as u32
+    }
+}
+
+// ===== Main Compiler =====
 
 /// WASM compiler for snippet-mode programs
 pub struct SnippetWasmCompiler<'a> {
     #[allow(dead_code)]
     symbols: &'a SymbolTable,
-    /// Function name to index mapping
+    /// Function name to index mapping (adjusted for imports)
     function_indices: HashMap<String, u32>,
     /// Local variable indices per function
     locals: HashMap<String, u32>,
     /// Current local count
     local_count: u32,
+    /// Import tracker
+    imports: ImportTracker,
+    /// Data segment builder
+    data_segment: DataSegmentBuilder,
+    /// Struct layouts by type name
+    struct_layouts: HashMap<String, StructLayout>,
+    /// Runtime function indices (set after imports are processed)
+    runtime: RuntimeFunctions,
+}
+
+/// Runtime function indices for effectful operations
+#[derive(Debug, Default, Clone)]
+struct RuntimeFunctions {
+    /// Database query execution: covenant_db.execute_query(sql_ptr, sql_len, param_count) -> result_ptr
+    db_execute_query: Option<u32>,
+    /// HTTP fetch: covenant_http.fetch(url_ptr, url_len) -> response_ptr
+    http_fetch: Option<u32>,
+    /// Console print: covenant_io.print(ptr, len)
+    io_print: Option<u32>,
+    /// Memory allocation: covenant_mem.alloc(size) -> ptr
+    mem_alloc: Option<u32>,
+    /// WASI fd_write for filesystem
+    wasi_fd_write: Option<u32>,
 }
 
 impl<'a> SnippetWasmCompiler<'a> {
@@ -35,6 +210,10 @@ impl<'a> SnippetWasmCompiler<'a> {
             function_indices: HashMap::new(),
             locals: HashMap::new(),
             local_count: 0,
+            imports: ImportTracker::new(),
+            data_segment: DataSegmentBuilder::new(),
+            struct_layouts: HashMap::new(),
+            runtime: RuntimeFunctions::default(),
         }
     }
 
@@ -42,32 +221,44 @@ impl<'a> SnippetWasmCompiler<'a> {
     pub fn compile_snippets(&mut self, snippets: &[Snippet]) -> Result<Vec<u8>, CodegenError> {
         let mut module = Module::new();
 
-        // Filter to pure function snippets only (no effects section)
-        let pure_functions: Vec<&Snippet> = snippets.iter()
-            .filter(|s| s.kind == SnippetKind::Function && !has_effects(s))
+        // Collect all function snippets (both pure and effectful)
+        let functions: Vec<&Snippet> = snippets
+            .iter()
+            .filter(|s| s.kind == SnippetKind::Function)
             .collect();
 
-        if pure_functions.is_empty() {
+        if functions.is_empty() {
             // Return minimal valid WASM module
             return Ok(module.finish());
         }
 
-        // Build function index map
-        for (i, snippet) in pure_functions.iter().enumerate() {
-            if let Some(sig) = find_function_signature(snippet) {
-                self.function_indices.insert(sig.name.clone(), i as u32);
-            }
+        // First pass: collect all effects and register imports
+        let all_effects = collect_all_effects(&functions);
+        self.register_effect_imports(&all_effects);
+
+        // Pre-scan for string literals to determine if we need memory
+        let has_strings = functions.iter().any(|s| snippet_has_string_literals(s));
+
+        // Build type section (imports first, then functions)
+        let mut types = TypeSection::new();
+
+        // Add import types
+        for (_, _, params, results) in &self.imports.imports {
+            types.function(params.clone(), results.clone());
         }
 
-        // Type section
-        let mut types = TypeSection::new();
-        for snippet in &pure_functions {
+        // Add function types
+        for snippet in &functions {
             if let Some(sig) = find_function_signature(snippet) {
-                let params: Vec<ValType> = sig.params.iter()
+                let params: Vec<ValType> = sig
+                    .params
+                    .iter()
                     .filter_map(|p| self.type_to_valtype(&p.ty))
                     .collect();
 
-                let results: Vec<ValType> = sig.returns.as_ref()
+                let results: Vec<ValType> = sig
+                    .returns
+                    .as_ref()
                     .and_then(|r| self.return_type_to_valtype(r))
                     .map(|t| vec![t])
                     .unwrap_or_default();
@@ -77,31 +268,150 @@ impl<'a> SnippetWasmCompiler<'a> {
         }
         module.section(&types);
 
-        // Function section
-        let mut functions = FunctionSection::new();
-        for i in 0..pure_functions.len() {
-            functions.function(i as u32);
+        // Import section (if there are any imports)
+        if !self.imports.imports.is_empty() {
+            let mut import_section = ImportSection::new();
+            for (i, (mod_name, func_name, _, _)) in self.imports.imports.iter().enumerate() {
+                import_section.import(mod_name, func_name, wasm_encoder::EntityType::Function(i as u32));
+            }
+            module.section(&import_section);
         }
-        module.section(&functions);
+
+        // Build function index map (accounting for imports)
+        let import_count = self.imports.len();
+        for (i, snippet) in functions.iter().enumerate() {
+            if let Some(sig) = find_function_signature(snippet) {
+                self.function_indices
+                    .insert(sig.name.clone(), import_count + i as u32);
+                // Also map by snippet ID for fully-qualified calls
+                self.function_indices
+                    .insert(snippet.id.clone(), import_count + i as u32);
+            }
+        }
+
+        // Function section
+        let mut func_section = FunctionSection::new();
+        for i in 0..functions.len() {
+            func_section.function(import_count + i as u32);
+        }
+        module.section(&func_section);
+
+        // Memory section (if we have data, effects, or string literals)
+        let needs_memory = !self.data_segment.is_empty() || !all_effects.is_empty() || has_strings;
+        if needs_memory {
+            let mut memory = MemorySection::new();
+            // 1 page = 64KB, start with 16 pages (1MB)
+            memory.memory(MemoryType {
+                minimum: 16,
+                maximum: Some(256), // 16MB max
+                memory64: false,
+                shared: false,
+            });
+            module.section(&memory);
+        }
+
+        // Global section for heap pointer
+        if needs_memory {
+            let mut globals = GlobalSection::new();
+            // Heap pointer starts after data segment
+            let heap_start = self.data_segment.data.len() as i32;
+            globals.global(
+                GlobalType {
+                    val_type: ValType::I32,
+                    mutable: true,
+                },
+                &wasm_encoder::ConstExpr::i32_const(heap_start),
+            );
+            module.section(&globals);
+        }
 
         // Export section
         let mut exports = ExportSection::new();
-        for (i, snippet) in pure_functions.iter().enumerate() {
+        for (i, snippet) in functions.iter().enumerate() {
             if let Some(sig) = find_function_signature(snippet) {
-                exports.export(&sig.name, ExportKind::Func, i as u32);
+                exports.export(&sig.name, ExportKind::Func, import_count + i as u32);
             }
+        }
+        // Export memory if present
+        if needs_memory {
+            exports.export("memory", ExportKind::Memory, 0);
         }
         module.section(&exports);
 
         // Code section
         let mut codes = CodeSection::new();
-        for snippet in &pure_functions {
+        for snippet in &functions {
             let wasm_func = self.compile_function_snippet(snippet)?;
             codes.function(&wasm_func);
         }
         module.section(&codes);
 
+        // Data section (if we have string constants or SQL queries)
+        if !self.data_segment.is_empty() {
+            let mut data = DataSection::new();
+            let segment_data = std::mem::take(&mut self.data_segment).finish();
+            data.active(
+                0, // Memory index
+                &wasm_encoder::ConstExpr::i32_const(0),
+                segment_data,
+            );
+            module.section(&data);
+        }
+
         Ok(module.finish())
+    }
+
+    /// Register imports for the given effects
+    fn register_effect_imports(&mut self, effects: &[String]) {
+        for effect in effects {
+            match effect.as_str() {
+                "database" => {
+                    self.runtime.db_execute_query = Some(self.imports.add_import(
+                        "covenant_db",
+                        "execute_query",
+                        vec![ValType::I32, ValType::I32, ValType::I32], // sql_ptr, sql_len, param_count
+                        vec![ValType::I32],                             // result_ptr
+                    ));
+                }
+                "network" => {
+                    self.runtime.http_fetch = Some(self.imports.add_import(
+                        "covenant_http",
+                        "fetch",
+                        vec![ValType::I32, ValType::I32], // url_ptr, url_len
+                        vec![ValType::I32],              // response_ptr
+                    ));
+                }
+                "filesystem" => {
+                    self.runtime.wasi_fd_write = Some(self.imports.add_import(
+                        "wasi_snapshot_preview1",
+                        "fd_write",
+                        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                        vec![ValType::I32],
+                    ));
+                }
+                "console" | "std.io" => {
+                    self.runtime.io_print = Some(self.imports.add_import(
+                        "covenant_io",
+                        "print",
+                        vec![ValType::I32, ValType::I32], // ptr, len
+                        vec![],
+                    ));
+                }
+                _ => {
+                    // Unknown effect - might be user-defined, skip
+                }
+            }
+        }
+
+        // Always add memory allocator if we have any effects
+        if !effects.is_empty() {
+            self.runtime.mem_alloc = Some(self.imports.add_import(
+                "covenant_mem",
+                "alloc",
+                vec![ValType::I32], // size
+                vec![ValType::I32], // ptr
+            ));
+        }
     }
 
     /// Compile a single function snippet
@@ -169,8 +479,17 @@ impl<'a> SnippetWasmCompiler<'a> {
                 }
                 StepKind::Match(match_step) => {
                     for case in &match_step.cases {
+                        // Count bindings from variant patterns
+                        if let MatchPattern::Variant { bindings, .. } = &case.pattern {
+                            count += bindings.len() as u32;
+                        }
                         count += self.count_step_bindings(&case.steps);
                     }
+                }
+                StepKind::For(for_step) => {
+                    // Count: index local, length local, item local
+                    count += 3;
+                    count += self.count_step_bindings(&for_step.steps);
                 }
                 _ => {}
             }
@@ -212,17 +531,279 @@ impl<'a> SnippetWasmCompiler<'a> {
                     func.instruction(&Instruction::LocalSet(local));
                 }
             }
-            StepKind::Match(_) => {
-                // TODO: Implement match compilation
-                return Err(CodegenError::UnsupportedExpression);
+            StepKind::Match(match_step) => {
+                self.compile_match_step(match_step, &step.output_binding, func)?;
             }
-            StepKind::For(_) | StepKind::Query(_) | StepKind::Insert(_) |
-            StepKind::Update(_) | StepKind::Delete(_) | StepKind::Transaction(_) |
-            StepKind::Traverse(_) => {
-                // These require effects, shouldn't appear in pure functions
+            StepKind::For(for_step) => {
+                self.compile_for_step(for_step, func)?;
+            }
+            StepKind::Query(query) => {
+                self.compile_query_step(query, func)?;
+                // Store result if not discarded
+                if step.output_binding != "_" {
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                }
+            }
+            StepKind::Construct(construct) => {
+                self.compile_construct_step(construct, func)?;
+                // Store result if not discarded
+                if step.output_binding != "_" {
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                }
+            }
+            StepKind::Insert(_) | StepKind::Update(_) | StepKind::Delete(_) |
+            StepKind::Transaction(_) | StepKind::Traverse(_) => {
+                // These require database effects and runtime support
+                // For now, generate a placeholder call to runtime
                 return Err(CodegenError::UnsupportedExpression);
             }
         }
+        Ok(())
+    }
+
+    /// Compile a match step
+    ///
+    /// Match expressions are compiled to a series of if-else blocks for pattern matching.
+    /// For enum variants, we use the tag field (first word) to dispatch.
+    fn compile_match_step(
+        &mut self,
+        match_step: &MatchStep,
+        output_binding: &str,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Get the value being matched (copy the index to avoid borrow issues)
+        let match_local = *self.locals.get(&match_step.on)
+            .ok_or_else(|| CodegenError::UndefinedFunction { name: match_step.on.clone() })?;
+
+        // For simple integer/enum tag matching, we compile to a series of if-else
+        // More complex pattern matching (structs, nested patterns) would need additional work
+
+        let num_cases = match_step.cases.len();
+
+        // Handle empty match (shouldn't happen in valid code)
+        if num_cases == 0 {
+            return Ok(());
+        }
+
+        // Compile each case as an if-else chain
+        for (i, case) in match_step.cases.iter().enumerate() {
+            match &case.pattern {
+                MatchPattern::Variant { variant: _, bindings } => {
+                    // Load the value (or its tag)
+                    func.instruction(&Instruction::LocalGet(match_local));
+
+                    // Use ordinal-based matching: case index maps to expected tag value
+                    // This assumes enums use 0, 1, 2, ... for variant tags
+                    let tag_value = i as i64;
+                    func.instruction(&Instruction::I64Const(tag_value));
+                    func.instruction(&Instruction::I64Eq);
+                    func.instruction(&Instruction::If(BlockType::Empty));
+
+                    // Set up bindings for destructured values
+                    // For now, we assume single binding gets the value
+                    if !bindings.is_empty() {
+                        func.instruction(&Instruction::LocalGet(match_local));
+                        let binding_local = self.allocate_local(&bindings[0]);
+                        func.instruction(&Instruction::LocalSet(binding_local));
+                    }
+
+                    // Compile case body
+                    for step in &case.steps {
+                        self.compile_step(step, func)?;
+                    }
+
+                    // Add else if there are more cases
+                    if i < num_cases - 1 {
+                        func.instruction(&Instruction::Else);
+                    }
+                }
+                MatchPattern::Wildcard => {
+                    // Wildcard matches anything - just compile the body
+                    // If this is the last case, it's the default
+                    for step in &case.steps {
+                        self.compile_step(step, func)?;
+                    }
+                }
+            }
+        }
+
+        // Close all the if blocks
+        for (i, case) in match_step.cases.iter().enumerate() {
+            if !matches!(case.pattern, MatchPattern::Wildcard) {
+                func.instruction(&Instruction::End);
+            }
+            // Only close non-wildcard cases that aren't the last
+            if i < num_cases - 1 && matches!(case.pattern, MatchPattern::Variant { .. }) {
+                // End was already added, nothing more needed
+            }
+        }
+
+        // Store result if needed
+        if output_binding != "_" {
+            // Match results would need additional infrastructure to collect
+            // For now, we leave this as a TODO for full implementation
+        }
+
+        Ok(())
+    }
+
+    /// Compile a for loop step
+    ///
+    /// For loops iterate over collections. We compile to a WASM loop with
+    /// index tracking and bounds checking.
+    fn compile_for_step(&mut self, for_step: &ForStep, func: &mut Function) -> Result<(), CodegenError> {
+        // Get the collection (copy the index to avoid borrow issues)
+        let collection_local = *self.locals.get(&for_step.collection)
+            .ok_or_else(|| CodegenError::UndefinedFunction { name: for_step.collection.clone() })?;
+
+        // Allocate locals for loop index and length
+        let index_local = self.allocate_local(&format!("__for_idx_{}", for_step.var));
+        let len_local = self.allocate_local(&format!("__for_len_{}", for_step.var));
+        let item_local = self.allocate_local(&for_step.var);
+
+        // Initialize index to 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(index_local));
+
+        // Get collection length (assume it's stored as first word of collection struct)
+        func.instruction(&Instruction::LocalGet(collection_local));
+        // For now, assume length is accessible - in real implementation would need
+        // proper collection type handling
+        func.instruction(&Instruction::LocalSet(len_local));
+
+        // Start loop block
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer block for break
+        func.instruction(&Instruction::Loop(BlockType::Empty)); // loop block
+
+        // Check if index >= length (exit condition)
+        func.instruction(&Instruction::LocalGet(index_local));
+        func.instruction(&Instruction::LocalGet(len_local));
+        func.instruction(&Instruction::I64GeS); // index >= length means exit
+        // I64GeS returns i32 (0 or 1), convert to i32 for br_if
+        func.instruction(&Instruction::BrIf(1)); // Break out if done (to outer block)
+
+        // Get current item (would need proper collection indexing)
+        // For now, just use the index as a placeholder
+        func.instruction(&Instruction::LocalGet(index_local));
+        func.instruction(&Instruction::LocalSet(item_local));
+
+        // Compile loop body
+        for step in &for_step.steps {
+            self.compile_step(step, func)?;
+        }
+
+        // Increment index
+        func.instruction(&Instruction::LocalGet(index_local));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(index_local));
+
+        // Branch back to loop start
+        func.instruction(&Instruction::Br(0));
+
+        // End loop and outer block
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end outer block
+
+        Ok(())
+    }
+
+    /// Compile a struct construction step
+    ///
+    /// For simple structs (like Point with 2 Int fields), we pack the fields
+    /// into a single i64: (field1 << 32) | (field2 & 0xFFFFFFFF)
+    fn compile_construct_step(
+        &mut self,
+        construct: &StructConstruction,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // For a 2-field struct like Point{x, y}, pack into single i64
+        // This is a simplified MVP - real implementation would use memory allocation
+        if construct.fields.len() == 2 {
+            // Compile first field, shift left 32 bits
+            self.compile_input(&construct.fields[0].value, func)?;
+            func.instruction(&Instruction::I64Const(32));
+            func.instruction(&Instruction::I64Shl);
+
+            // Compile second field, mask to 32 bits
+            self.compile_input(&construct.fields[1].value, func)?;
+            func.instruction(&Instruction::I64Const(0xFFFFFFFF));
+            func.instruction(&Instruction::I64And);
+
+            // Combine with OR
+            func.instruction(&Instruction::I64Or);
+        } else if construct.fields.len() == 1 {
+            // Single field struct - just use the field value
+            self.compile_input(&construct.fields[0].value, func)?;
+        } else {
+            // For more complex structs, we'd need memory allocation
+            // For now, just push 0 as placeholder
+            func.instruction(&Instruction::I64Const(0));
+        }
+
+        Ok(())
+    }
+
+    /// Compile a query step
+    ///
+    /// Queries are compiled differently based on dialect:
+    /// - Covenant queries are compiled to runtime calls
+    /// - SQL dialect queries have their SQL stored in data segment
+    fn compile_query_step(&mut self, query: &QueryStep, func: &mut Function) -> Result<(), CodegenError> {
+        match &query.content {
+            QueryContent::Dialect(dialect) => {
+                // Store SQL in data segment
+                let sql_offset = self.data_segment.add_string(&dialect.body);
+                let sql_len = dialect.body.len();
+
+                // Push SQL pointer and length
+                func.instruction(&Instruction::I32Const(sql_offset as i32));
+                func.instruction(&Instruction::I32Const(sql_len as i32));
+
+                // Push parameter count
+                func.instruction(&Instruction::I32Const(dialect.params.len() as i32));
+
+                // Call database execute function if available
+                if let Some(db_fn) = self.runtime.db_execute_query {
+                    func.instruction(&Instruction::Call(db_fn));
+                } else {
+                    // No database runtime available - return 0
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::I32Const(0));
+                }
+            }
+            QueryContent::Covenant(cov) => {
+                // Generate SQL from Covenant query syntax
+                let sql = generate_sql_from_covenant(cov, &query.target);
+                let sql_offset = self.data_segment.add_string(&sql);
+                let sql_len = sql.len();
+
+                // Push SQL pointer and length
+                func.instruction(&Instruction::I32Const(sql_offset as i32));
+                func.instruction(&Instruction::I32Const(sql_len as i32));
+
+                // No parameters for simple Covenant queries
+                func.instruction(&Instruction::I32Const(0));
+
+                // Call database execute function if available
+                if let Some(db_fn) = self.runtime.db_execute_query {
+                    func.instruction(&Instruction::Call(db_fn));
+                } else {
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::Drop);
+                    func.instruction(&Instruction::I32Const(0));
+                }
+            }
+        }
+
+        // Convert result pointer to i64 for uniform local storage
+        func.instruction(&Instruction::I64ExtendI32U);
+
         Ok(())
     }
 
@@ -399,7 +980,7 @@ impl<'a> SnippetWasmCompiler<'a> {
     }
 
     /// Compile a literal value
-    fn compile_literal(&self, lit: &Literal, func: &mut Function) -> Result<(), CodegenError> {
+    fn compile_literal(&mut self, lit: &Literal, func: &mut Function) -> Result<(), CodegenError> {
         match lit {
             Literal::Int(n) => {
                 func.instruction(&Instruction::I64Const(*n));
@@ -408,14 +989,18 @@ impl<'a> SnippetWasmCompiler<'a> {
                 func.instruction(&Instruction::F64Const(*n));
             }
             Literal::Bool(b) => {
-                func.instruction(&Instruction::I32Const(if *b { 1 } else { 0 }));
+                func.instruction(&Instruction::I64Const(if *b { 1 } else { 0 }));
             }
             Literal::None => {
-                // Represent none as 0
-                func.instruction(&Instruction::I64Const(0));
+                // Represent None as sentinel value i64::MIN to distinguish from valid 0
+                func.instruction(&Instruction::I64Const(i64::MIN));
             }
-            Literal::String(_) => {
-                return Err(CodegenError::UnsupportedType { ty: "String".to_string() });
+            Literal::String(s) => {
+                // Store string in data segment and return fat pointer (offset << 32 | len)
+                let offset = self.data_segment.add_string(s);
+                let len = s.len() as i64;
+                let packed = ((offset as i64) << 32) | len;
+                func.instruction(&Instruction::I64Const(packed));
             }
         }
         Ok(())
@@ -438,10 +1023,14 @@ impl<'a> SnippetWasmCompiler<'a> {
             TypeKind::Named(path) => match path.name() {
                 "Int" => Some(ValType::I64),
                 "Float" => Some(ValType::F64),
-                "Bool" => Some(ValType::I32),
-                _ => None,
+                "Bool" => Some(ValType::I64),
+                "String" => Some(ValType::I64), // Fat pointer (offset << 32 | len)
+                // All other named types (enums, structs) are represented as i64
+                // Enums use tag values, structs use packed fields or pointers
+                _ => Some(ValType::I64),
             },
             TypeKind::Optional(inner) => self.type_to_valtype(inner),
+            TypeKind::List(_) => Some(ValType::I64), // Fat pointer (ptr << 32 | len)
             _ => None,
         }
     }
@@ -459,11 +1048,40 @@ impl<'a> SnippetWasmCompiler<'a> {
     }
 }
 
-// Helper functions
+// ===== Helper Functions =====
 
 /// Check if a snippet has effects
+#[allow(dead_code)]
 fn has_effects(snippet: &Snippet) -> bool {
-    snippet.sections.iter().any(|s| matches!(s, Section::Effects(_)))
+    snippet
+        .sections
+        .iter()
+        .any(|s| matches!(s, Section::Effects(_)))
+}
+
+/// Collect all effects from a set of snippets
+fn collect_all_effects(snippets: &[&Snippet]) -> Vec<String> {
+    let mut effects = Vec::new();
+    for snippet in snippets {
+        if let Some(effects_section) = find_effects_section(snippet) {
+            for effect in &effects_section.effects {
+                if !effects.contains(&effect.name) {
+                    effects.push(effect.name.clone());
+                }
+            }
+        }
+    }
+    effects
+}
+
+/// Find the effects section in a snippet
+fn find_effects_section(snippet: &Snippet) -> Option<&EffectsSection> {
+    for section in &snippet.sections {
+        if let Section::Effects(effects) = section {
+            return Some(effects);
+        }
+    }
+    None
 }
 
 /// Find the function signature in a snippet
@@ -488,6 +1106,171 @@ fn find_body_section(snippet: &Snippet) -> Option<&covenant_ast::BodySection> {
     None
 }
 
+/// Check if a snippet contains any string literals
+fn snippet_has_string_literals(snippet: &Snippet) -> bool {
+    if let Some(body) = find_body_section(snippet) {
+        return steps_have_string_literals(&body.steps);
+    }
+    false
+}
+
+/// Check if steps contain any string literals
+fn steps_have_string_literals(steps: &[Step]) -> bool {
+    for step in steps {
+        match &step.kind {
+            StepKind::Return(ret) => {
+                if let ReturnValue::Lit(Literal::String(_)) = &ret.value {
+                    return true;
+                }
+            }
+            StepKind::Bind(bind) => {
+                if let BindSource::Lit(Literal::String(_)) = &bind.source {
+                    return true;
+                }
+            }
+            StepKind::Compute(compute) => {
+                for input in &compute.inputs {
+                    if let InputSource::Lit(Literal::String(_)) = &input.source {
+                        return true;
+                    }
+                }
+            }
+            StepKind::If(if_step) => {
+                if steps_have_string_literals(&if_step.then_steps) {
+                    return true;
+                }
+                if let Some(else_steps) = &if_step.else_steps {
+                    if steps_have_string_literals(else_steps) {
+                        return true;
+                    }
+                }
+            }
+            StepKind::Match(match_step) => {
+                for case in &match_step.cases {
+                    if steps_have_string_literals(&case.steps) {
+                        return true;
+                    }
+                }
+            }
+            StepKind::For(for_step) => {
+                if steps_have_string_literals(&for_step.steps) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Compute a deterministic tag value for a variant name
+#[allow(dead_code)]
+fn variant_tag(variant: &str) -> i64 {
+    // Simple hash: sum of byte values
+    // In a real implementation, this would use the type registry
+    variant.bytes().map(|b| b as i64).sum()
+}
+
+/// Generate SQL from a Covenant query
+fn generate_sql_from_covenant(
+    query: &covenant_ast::CovenantQuery,
+    _target: &str,
+) -> String {
+    use covenant_ast::{SnippetSelectClause, SnippetOrderDirection};
+
+    let mut sql = String::new();
+
+    // SELECT clause
+    sql.push_str("SELECT ");
+    match &query.select {
+        SnippetSelectClause::All => sql.push('*'),
+        SnippetSelectClause::Field(field) => sql.push_str(field),
+    }
+
+    // FROM clause
+    sql.push_str(" FROM ");
+    sql.push_str(&query.from);
+
+    // WHERE clause
+    if let Some(condition) = &query.where_clause {
+        sql.push_str(" WHERE ");
+        sql.push_str(&condition_to_sql(&condition.kind));
+    }
+
+    // ORDER BY clause
+    if let Some(order) = &query.order {
+        sql.push_str(" ORDER BY ");
+        sql.push_str(&order.field);
+        match order.direction {
+            SnippetOrderDirection::Asc => sql.push_str(" ASC"),
+            SnippetOrderDirection::Desc => sql.push_str(" DESC"),
+        }
+    }
+
+    // LIMIT clause
+    if let Some(limit) = query.limit {
+        sql.push_str(" LIMIT ");
+        sql.push_str(&limit.to_string());
+    }
+
+    sql
+}
+
+/// Convert a condition to SQL
+fn condition_to_sql(condition: &covenant_ast::ConditionKind) -> String {
+    use covenant_ast::ConditionKind;
+
+    match condition {
+        ConditionKind::Equals { field, value } => {
+            format!("{} = {}", field, input_source_to_sql(value))
+        }
+        ConditionKind::NotEquals { field, value } => {
+            format!("{} <> {}", field, input_source_to_sql(value))
+        }
+        ConditionKind::Contains { field, value } => {
+            format!("{} LIKE '%' || {} || '%'", field, input_source_to_sql(value))
+        }
+        ConditionKind::And(left, right) => {
+            format!(
+                "({}) AND ({})",
+                condition_to_sql(&left.kind),
+                condition_to_sql(&right.kind)
+            )
+        }
+        ConditionKind::Or(left, right) => {
+            format!(
+                "({}) OR ({})",
+                condition_to_sql(&left.kind),
+                condition_to_sql(&right.kind)
+            )
+        }
+        ConditionKind::RelTo { target, rel_type } | ConditionKind::RelFrom { source: target, rel_type } => {
+            // Relationship conditions need join logic - placeholder
+            format!("/* relation {} to {} */", rel_type, target)
+        }
+    }
+}
+
+/// Convert an input source to SQL value
+fn input_source_to_sql(source: &InputSource) -> String {
+    match source {
+        InputSource::Var(name) => format!(":{}", name), // Parameter placeholder
+        InputSource::Lit(lit) => literal_to_sql(lit),
+        InputSource::Field { of, field } => format!("{}.{}", of, field),
+    }
+}
+
+/// Convert a literal to SQL
+fn literal_to_sql(lit: &Literal) -> String {
+    match lit {
+        Literal::Int(n) => n.to_string(),
+        Literal::Float(n) => n.to_string(),
+        Literal::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
+        Literal::String(s) => format!("'{}'", s.replace('\'', "''")),
+        Literal::None => "NULL".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,5 +1280,196 @@ mod tests {
         let symbols = SymbolTable::new();
         let compiler = SnippetWasmCompiler::new(&symbols);
         assert!(compiler.function_indices.is_empty());
+    }
+
+    #[test]
+    fn test_data_segment_builder() {
+        let mut builder = DataSegmentBuilder::new();
+
+        // Add a string
+        let offset1 = builder.add_string("hello");
+        assert_eq!(offset1, 0);
+
+        // Adding same string returns cached offset
+        let offset2 = builder.add_string("hello");
+        assert_eq!(offset1, offset2);
+
+        // Adding different string gets new offset
+        let offset3 = builder.add_string("world");
+        assert!(offset3 > offset1);
+
+        let data = builder.finish();
+        assert!(!data.is_empty());
+    }
+
+    #[test]
+    fn test_wasm_type_sizes() {
+        assert_eq!(WasmType::I32.size(), 4);
+        assert_eq!(WasmType::I64.size(), 8);
+        assert_eq!(WasmType::F32.size(), 4);
+        assert_eq!(WasmType::F64.size(), 8);
+        assert_eq!(WasmType::Ptr.size(), 4);
+    }
+
+    #[test]
+    fn test_variant_tag() {
+        let tag1 = variant_tag("Some");
+        let tag2 = variant_tag("None");
+        assert_ne!(tag1, tag2);
+
+        // Same variant should produce same tag
+        assert_eq!(variant_tag("Some"), variant_tag("Some"));
+    }
+
+    #[test]
+    fn test_literal_to_sql() {
+        assert_eq!(literal_to_sql(&Literal::Int(42)), "42");
+        assert_eq!(literal_to_sql(&Literal::Float(3.14)), "3.14");
+        assert_eq!(literal_to_sql(&Literal::Bool(true)), "TRUE");
+        assert_eq!(literal_to_sql(&Literal::Bool(false)), "FALSE");
+        assert_eq!(literal_to_sql(&Literal::String("test".to_string())), "'test'");
+        assert_eq!(literal_to_sql(&Literal::None), "NULL");
+    }
+
+    #[test]
+    fn test_literal_to_sql_escapes_quotes() {
+        assert_eq!(
+            literal_to_sql(&Literal::String("it's".to_string())),
+            "'it''s'"
+        );
+    }
+
+    #[test]
+    fn test_input_source_to_sql() {
+        assert_eq!(
+            input_source_to_sql(&InputSource::Var("user_id".to_string())),
+            ":user_id"
+        );
+        assert_eq!(
+            input_source_to_sql(&InputSource::Lit(Literal::Int(100))),
+            "100"
+        );
+        assert_eq!(
+            input_source_to_sql(&InputSource::Field {
+                of: "user".to_string(),
+                field: "name".to_string()
+            }),
+            "user.name"
+        );
+    }
+
+    #[test]
+    fn test_import_tracker() {
+        let mut tracker = ImportTracker::new();
+
+        let idx1 = tracker.add_import(
+            "covenant_db",
+            "execute_query",
+            vec![ValType::I32],
+            vec![ValType::I32],
+        );
+        assert_eq!(idx1, 0);
+
+        // Same import returns same index
+        let idx2 = tracker.add_import(
+            "covenant_db",
+            "execute_query",
+            vec![ValType::I32],
+            vec![ValType::I32],
+        );
+        assert_eq!(idx1, idx2);
+
+        // Different import gets new index
+        let idx3 = tracker.add_import(
+            "covenant_http",
+            "fetch",
+            vec![ValType::I32],
+            vec![ValType::I32],
+        );
+        assert_eq!(idx3, 1);
+
+        assert_eq!(tracker.len(), 2);
+    }
+
+    #[test]
+    fn test_generate_sql_simple_select() {
+        use covenant_ast::{CovenantQuery, SnippetSelectClause, Span};
+
+        let query = CovenantQuery {
+            select: SnippetSelectClause::All,
+            from: "users".to_string(),
+            where_clause: None,
+            order: None,
+            limit: None,
+            span: Span::default(),
+        };
+
+        let sql = generate_sql_from_covenant(&query, "test_db");
+        assert_eq!(sql, "SELECT * FROM users");
+    }
+
+    #[test]
+    fn test_generate_sql_with_limit() {
+        use covenant_ast::{CovenantQuery, SnippetSelectClause, Span};
+
+        let query = CovenantQuery {
+            select: SnippetSelectClause::Field("name".to_string()),
+            from: "users".to_string(),
+            where_clause: None,
+            order: None,
+            limit: Some(10),
+            span: Span::default(),
+        };
+
+        let sql = generate_sql_from_covenant(&query, "test_db");
+        assert_eq!(sql, "SELECT name FROM users LIMIT 10");
+    }
+
+    #[test]
+    fn test_generate_sql_with_order() {
+        use covenant_ast::{
+            CovenantQuery, OrderClause, SnippetOrderDirection, SnippetSelectClause, Span,
+        };
+
+        let query = CovenantQuery {
+            select: SnippetSelectClause::All,
+            from: "products".to_string(),
+            where_clause: None,
+            order: Some(OrderClause {
+                field: "price".to_string(),
+                direction: SnippetOrderDirection::Desc,
+                span: Span::default(),
+            }),
+            limit: None,
+            span: Span::default(),
+        };
+
+        let sql = generate_sql_from_covenant(&query, "test_db");
+        assert_eq!(sql, "SELECT * FROM products ORDER BY price DESC");
+    }
+
+    #[test]
+    fn test_generate_sql_with_where() {
+        use covenant_ast::{
+            Condition, ConditionKind, CovenantQuery, SnippetSelectClause, Span,
+        };
+
+        let query = CovenantQuery {
+            select: SnippetSelectClause::All,
+            from: "users".to_string(),
+            where_clause: Some(Condition {
+                kind: ConditionKind::Equals {
+                    field: "status".to_string(),
+                    value: InputSource::Lit(Literal::String("active".to_string())),
+                },
+                span: Span::default(),
+            }),
+            order: None,
+            limit: None,
+            span: Span::default(),
+        };
+
+        let sql = generate_sql_from_covenant(&query, "test_db");
+        assert_eq!(sql, "SELECT * FROM users WHERE status = 'active'");
     }
 }

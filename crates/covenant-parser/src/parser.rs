@@ -2491,6 +2491,7 @@ impl<'a> Parser<'a> {
             "for" => StepKind::For(self.parse_for_step()?),
             "transaction" => StepKind::Transaction(self.parse_transaction_step()?),
             "traverse" => StepKind::Traverse(self.parse_traverse_step()?),
+            "construct" => StepKind::Construct(self.parse_construct_step()?),
             _ => {
                 return Err(ParseError::InvalidStepKind {
                     kind: step_kind_str,
@@ -3653,6 +3654,27 @@ impl<'a> Parser<'a> {
         Ok(FieldAssignment {
             name,
             value,
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_construct_step(&mut self) -> Result<StructConstruction, ParseError> {
+        let start = self.span();
+
+        // type="Point"
+        let ty = self.parse_attribute_type("type")?;
+
+        // field name="x" from="x"
+        let mut fields = Vec::new();
+        while self.at(TokenKind::Field) {
+            fields.push(self.parse_inline_field_assignment()?);
+        }
+
+        let end = self.span();
+
+        Ok(StructConstruction {
+            ty,
+            fields,
             span: start.merge(end),
         })
     }

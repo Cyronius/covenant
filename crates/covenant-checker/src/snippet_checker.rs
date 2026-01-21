@@ -8,7 +8,7 @@ use covenant_ast::{
     Step, StepKind, ComputeStep, Operation, Input, InputSource, CallStep,
     ReturnStep, ReturnValue, IfStep, BindStep, BindSource, MatchStep, MatchPattern,
     FunctionSignature, ReturnType, Type, TypeKind, Literal, QueryStep, QueryContent,
-    StructSignature, EnumSignature,
+    StructSignature, EnumSignature, StructConstruction,
 };
 use crate::{CheckError, CheckResult, ResolvedType, SymbolTable, SymbolKind, EffectTable, TypeRegistry, VariantDef};
 
@@ -174,6 +174,7 @@ impl SnippetChecker {
             StepKind::Delete(_) => ResolvedType::None,
             StepKind::Transaction(_) => ResolvedType::Unknown,
             StepKind::Traverse(_) => ResolvedType::Unknown,
+            StepKind::Construct(construct) => self.infer_construct_step(construct),
         }
     }
 
@@ -562,6 +563,12 @@ impl SnippetChecker {
             // Cases return different types - result is a union
             ResolvedType::Union(case_types)
         }
+    }
+
+    /// Infer type of a construct step
+    fn infer_construct_step(&mut self, construct: &StructConstruction) -> ResolvedType {
+        // The type of a construct step is the struct type being constructed
+        self.resolve_type(&construct.ty)
     }
 
     /// Get the binding type for a variant pattern
