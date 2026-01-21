@@ -1,0 +1,79 @@
+(* Node.js implementation of std.storage.kv using file-based storage *)
+
+snippet id="std.storage.kv.set.node" kind="extern-impl"
+
+implements="std.storage.kv.set"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-set"
+  storage_dir="~/.covenant-storage/kv"
+  description="Writes value to file: {storage_dir}/{encoded_key}.json"
+end
+
+end
+
+snippet id="std.storage.kv.get.node" kind="extern-impl"
+
+implements="std.storage.kv.get"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-get"
+  storage_dir="~/.covenant-storage/kv"
+  description="Reads value from file, returns none if file doesn't exist"
+end
+
+end
+
+snippet id="std.storage.kv.delete.node" kind="extern-impl"
+
+implements="std.storage.kv.delete"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-delete"
+  storage_dir="~/.covenant-storage/kv"
+  description="Deletes file if it exists"
+end
+
+end
+
+snippet id="std.storage.kv.has.node" kind="extern-impl"
+
+implements="std.storage.kv.has"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-has"
+  storage_dir="~/.covenant-storage/kv"
+  description="Checks if file exists using fs.existsSync"
+end
+
+end
+
+snippet id="std.storage.kv.list.node" kind="extern-impl"
+
+implements="std.storage.kv.list"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-list"
+  storage_dir="~/.covenant-storage/kv"
+  description="Lists files in directory matching prefix pattern"
+end
+
+end
+
+snippet id="std.storage.kv.clear.node" kind="extern-impl"
+
+implements="std.storage.kv.clear"
+platform="node"
+
+metadata
+  contract="@node/std-storage-kv-clear"
+  storage_dir="~/.covenant-storage/kv"
+  description="Deletes files matching prefix, or all files if no prefix"
+end
+
+end

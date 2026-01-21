@@ -1,0 +1,280 @@
+(* std.storage.doc - Cross-Platform Document Store *)
+(*
+   Provides document storage with queries that works across all platforms:
+   - Browser: IndexedDB
+   - Node.js: SQLite (better-sqlite3)
+   - WASI: Embedded database
+
+   Supports two query approaches:
+   1. Query dialect (dialect="indexeddb") - Covenant's native query syntax
+   2. Function API with JSON filters - Simpler for basic queries
+
+   All operations require: effect std.storage
+*)
+
+(* ============================================================ *)
+(* Type Definitions                                             *)
+(* ============================================================ *)
+
+snippet id="std.storage.doc.types" kind="type"
+
+types
+  (* A stored document *)
+  struct name="Document"
+    field name="id" type="String"
+    field name="data" type="Json"
+    field name="created_at" type="DateTime"
+    field name="updated_at" type="DateTime"
+  end
+
+  (* Result from query operations *)
+  struct name="QueryResult"
+    field name="documents" type="Document[]"
+    field name="total" type="Int"
+  end
+end
+
+end
+
+(* ============================================================ *)
+(* Document Store Functions                                     *)
+(* ============================================================ *)
+
+(* Insert or update a document *)
+snippet id="std.storage.doc.put" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="put"
+    param name="collection" type="String"
+    param name="id" type="String"
+    param name="data" type="Json"
+    returns type="Document"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Insert or update a document. Returns the stored document with timestamps."
+  cost_hint=cheap
+end
+
+end
+
+(* Get document by ID *)
+snippet id="std.storage.doc.get" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="get"
+    param name="collection" type="String"
+    param name="id" type="String"
+    returns union
+      type="Document" optional
+    end
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Retrieve a document by ID, returns none if not found"
+  cost_hint=cheap
+end
+
+end
+
+(* Delete document by ID *)
+snippet id="std.storage.doc.delete" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="delete"
+    param name="collection" type="String"
+    param name="id" type="String"
+    returns type="Bool"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Delete a document by ID. Returns true if document existed."
+  cost_hint=cheap
+end
+
+end
+
+(* Query documents with JSON filter *)
+snippet id="std.storage.doc.query" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="query"
+    param name="collection" type="String"
+    param name="filter" type="Json" optional=true
+    param name="order_by" type="String" optional=true
+    param name="order_dir" type="String" optional=true
+    param name="limit" type="Int" optional=true
+    param name="offset" type="Int" optional=true
+    returns type="QueryResult"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Query documents with JSON filter. See filter syntax in documentation."
+  cost_hint=moderate
+end
+
+end
+
+(* Count documents matching filter *)
+snippet id="std.storage.doc.count" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="count"
+    param name="collection" type="String"
+    param name="filter" type="Json" optional=true
+    returns type="Int"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Count documents matching filter (or all documents if no filter)"
+  cost_hint=moderate
+end
+
+end
+
+(* Create index for faster queries *)
+snippet id="std.storage.doc.create_index" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="create_index"
+    param name="collection" type="String"
+    param name="field" type="String"
+    returns type="Unit"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Create an index on a field for faster queries"
+  cost_hint=moderate
+end
+
+end
+
+(* ============================================================ *)
+(* JSON Filter Syntax Reference                                 *)
+(* ============================================================ *)
+(*
+   Filters are JSON objects with field paths and operators:
+
+   Exact match:
+     { "status": "active" }
+
+   Comparison operators:
+     { "age": { "$gt": 18 } }
+     { "price": { "$lte": 100 } }
+     { "score": { "$gte": 50, "$lt": 100 } }
+
+   Logical operators:
+     { "$and": [{ "status": "active" }, { "role": "admin" }] }
+     { "$or": [{ "status": "pending" }, { "status": "review" }] }
+
+   Array contains:
+     { "tags": { "$contains": "important" } }
+
+   String matching:
+     { "name": { "$starts_with": "John" } }
+     { "email": { "$ends_with": "@example.com" } }
+
+   Null check:
+     { "deleted_at": null }
+     { "deleted_at": { "$ne": null } }
+
+   For complex queries, prefer the indexeddb dialect with Covenant's
+   native query syntax instead of JSON filters.
+*)
+
+(* ============================================================ *)
+(* Query Dialect: indexeddb                                     *)
+(* ============================================================ *)
+(*
+   For complex queries, use dialect="indexeddb" with Covenant's query syntax:
+
+   step id="s1" kind="query"
+     dialect="indexeddb"
+     target="std.storage"
+     select all
+     from="users"
+     where
+       and
+         equals field="status" lit="active"
+         greater field="age" lit=18
+       end
+     end
+     order by="created_at" dir="desc"
+     limit=10
+     as="results"
+   end
+
+   Benefits:
+   - Compile-time type checking
+   - Cross-platform (same query on browser/node/wasi)
+   - Optimizer integration
+   - No SQL injection risk
+
+   See QUERY_SEMANTICS.md Section 16 for full specification.
+*)

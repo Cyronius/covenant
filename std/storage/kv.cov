@@ -1,0 +1,191 @@
+(* std.storage.kv - Cross-Platform Key-Value Store *)
+(*
+   Provides simple key-value storage that works across all platforms:
+   - Browser: localStorage
+   - Node.js: File-based storage (~/.covenant-storage/kv/)
+   - WASI: Preopened directory
+
+   All operations require: effect std.storage
+*)
+
+(* ============================================================ *)
+(* Effect Declaration                                           *)
+(* ============================================================ *)
+
+snippet id="std.storage" kind="effect"
+
+metadata
+  description="Cross-platform storage capability"
+  platforms platform="browser" platform="node" platform="wasi" end
+end
+
+end
+
+(* ============================================================ *)
+(* Key-Value Store Functions                                    *)
+(* ============================================================ *)
+
+(* Store a value by key *)
+snippet id="std.storage.kv.set" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="set"
+    param name="key" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Store a string value by key"
+  cost_hint=cheap
+end
+
+end
+
+(* Retrieve a value by key *)
+snippet id="std.storage.kv.get" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="get"
+    param name="key" type="String"
+    returns union
+      type="String" optional
+    end
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Retrieve a value by key, returns none if not found"
+  cost_hint=cheap
+end
+
+end
+
+(* Delete a value by key *)
+snippet id="std.storage.kv.delete" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="delete"
+    param name="key" type="String"
+    returns type="Unit"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Delete a value by key (no-op if key doesn't exist)"
+  cost_hint=cheap
+end
+
+end
+
+(* Check if key exists *)
+snippet id="std.storage.kv.has" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="has"
+    param name="key" type="String"
+    returns type="Bool"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Check if a key exists in storage"
+  cost_hint=cheap
+end
+
+end
+
+(* List keys matching prefix *)
+snippet id="std.storage.kv.list" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="list"
+    param name="prefix" type="String"
+    returns type="String[]"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="List all keys matching the given prefix"
+  cost_hint=moderate
+end
+
+end
+
+(* Clear keys (all or by prefix) *)
+snippet id="std.storage.kv.clear" kind="extern-abstract"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="clear"
+    param name="prefix" type="String" optional=true
+    returns type="Unit"
+  end
+end
+
+platforms
+  platform="browser"
+  platform="node"
+  platform="wasi"
+end
+
+metadata
+  description="Clear all keys, or only keys matching prefix if provided"
+  cost_hint=moderate
+end
+
+end

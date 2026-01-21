@@ -1,0 +1,79 @@
+(* WASI implementation of std.storage.kv using preopened directory *)
+
+snippet id="std.storage.kv.set.wasi" kind="extern-impl"
+
+implements="std.storage.kv.set"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/write"
+  preopened_dir="covenant-storage/kv"
+  description="Writes value to file in preopened directory"
+end
+
+end
+
+snippet id="std.storage.kv.get.wasi" kind="extern-impl"
+
+implements="std.storage.kv.get"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/read"
+  preopened_dir="covenant-storage/kv"
+  description="Reads value from file, returns none if not found"
+end
+
+end
+
+snippet id="std.storage.kv.delete.wasi" kind="extern-impl"
+
+implements="std.storage.kv.delete"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/unlink"
+  preopened_dir="covenant-storage/kv"
+  description="Deletes file if it exists"
+end
+
+end
+
+snippet id="std.storage.kv.has.wasi" kind="extern-impl"
+
+implements="std.storage.kv.has"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/stat"
+  preopened_dir="covenant-storage/kv"
+  description="Stats file to check existence"
+end
+
+end
+
+snippet id="std.storage.kv.list.wasi" kind="extern-impl"
+
+implements="std.storage.kv.list"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/readdir"
+  preopened_dir="covenant-storage/kv"
+  description="Lists directory entries matching prefix"
+end
+
+end
+
+snippet id="std.storage.kv.clear.wasi" kind="extern-impl"
+
+implements="std.storage.kv.clear"
+platform="wasi"
+
+metadata
+  contract="wasi:filesystem/unlink"
+  preopened_dir="covenant-storage/kv"
+  description="Deletes files matching prefix pattern"
+end
+
+end

@@ -182,10 +182,38 @@ end
 ```
 
 **Key points:**
-- `dialect` required (postgres, sqlserver, mysql, sqlite)
+- `dialect` required (postgres, sqlserver, mysql, sqlite, indexeddb)
 - `body ... end` contains raw SQL (not parsed by Covenant)
 - `params` declares parameter bindings
 - `returns` type annotation required
+
+#### IndexedDB Dialect (Cross-Platform Storage)
+
+For cross-platform document storage, use `dialect="indexeddb"` with Covenant query syntax:
+
+```
+step id="s1" kind="query"
+  dialect="indexeddb"
+  target="std.storage"
+  select all
+  from="users"
+  where
+    and
+      equals field="status" lit="active"
+      greater field="age" lit=18
+    end
+  end
+  order by="created_at" dir="desc"
+  limit=10
+  as="active_users"
+end
+```
+
+**Key points:**
+- Uses Covenant query syntax (not opaque body blocks)
+- Compiles to IndexedDB (browser), SQLite (Node.js), or embedded DB (WASI)
+- Same query works across all platforms
+- Requires `effect std.storage`
 
 ### CRUD Operations (Covenant Types)
 
@@ -358,6 +386,87 @@ end
 ```
 
 Use via: `effect myorg.custom` then `kind="myorg.custom.my_construct"`
+
+### Cross-Platform Storage (`std.storage`)
+
+Unified key-value and document storage that works on browser, Node.js, and WASI.
+
+#### Key-Value Store (`std.storage.kv`)
+
+```
+effects
+  effect std.storage
+end
+
+body
+  step id="s1" kind="call"
+    fn="std.storage.kv.set"
+    arg name="key" lit="user:theme"
+    arg name="value" lit="dark"
+    as="_"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.kv.get"
+    arg name="key" lit="user:theme"
+    as="theme"
+  end
+end
+```
+
+| Function | Description |
+|----------|-------------|
+| `std.storage.kv.set` | Store a value |
+| `std.storage.kv.get` | Retrieve a value (returns optional) |
+| `std.storage.kv.delete` | Delete a value |
+| `std.storage.kv.has` | Check if key exists |
+| `std.storage.kv.list` | List keys by prefix |
+| `std.storage.kv.clear` | Clear keys (all or by prefix) |
+
+#### Document Store (`std.storage.doc`)
+
+```
+effects
+  effect std.storage
+end
+
+body
+  (* Using query dialect *)
+  step id="s1" kind="query"
+    dialect="indexeddb"
+    target="std.storage"
+    select all
+    from="users"
+    where
+      equals field="status" lit="active"
+    end
+    as="active_users"
+  end
+
+  (* Using function API *)
+  step id="s2" kind="call"
+    fn="std.storage.doc.put"
+    arg name="collection" lit="users"
+    arg name="id" lit="user123"
+    arg name="data" from="user_json"
+    as="doc"
+  end
+end
+```
+
+| Function | Description |
+|----------|-------------|
+| `std.storage.doc.put` | Insert/update document |
+| `std.storage.doc.get` | Get document by ID |
+| `std.storage.doc.delete` | Delete document |
+| `std.storage.doc.query` | Query with JSON filter |
+| `std.storage.doc.count` | Count matching documents |
+| `std.storage.doc.create_index` | Create index for faster queries |
+
+**Platform backends:**
+- Browser: localStorage (kv), IndexedDB (doc)
+- Node.js: Files (kv), SQLite (doc)
+- WASI: Preopened dir (kv), Embedded DB (doc)
 
 See [EXTENSIBLE_KINDS.md](../docs/design/EXTENSIBLE_KINDS.md) for full specification.
 

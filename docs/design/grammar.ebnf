@@ -215,11 +215,15 @@ query_body     = [ dialect_clause ] "target" "=" STRING query_content ;
 
 (* Dialect declaration - determines body syntax *)
 dialect_clause = "dialect" "=" dialect_value ;
-dialect_value  = STRING ;   (* "covenant" | "postgres" | "sqlserver" | "mysql" | "sqlite" | etc *)
+dialect_value  = STRING ;   (* "covenant" | "postgres" | "sqlserver" | "mysql" | "sqlite" | "indexeddb" | etc *)
 
 (* Query content depends on dialect *)
-query_content  = covenant_query_content     (* When dialect omitted or "covenant" *)
-               | dialect_query_content ;    (* When dialect is SQL or other *)
+query_content  = covenant_query_content     (* When dialect omitted, "covenant", or "indexeddb" *)
+               | dialect_query_content ;    (* When dialect is SQL: postgres, mysql, etc. *)
+
+(* Note: "indexeddb" dialect uses covenant_query_content but compiles to
+   IndexedDB (browser), SQLite (Node.js), or embedded DB (WASI).
+   This provides cross-platform document storage with typed queries. *)
 
 (* --- Covenant Dialect: Structured, Typed Queries --- *)
 (* Simple syntax for querying Covenant types (project AST, structs, collections) *)

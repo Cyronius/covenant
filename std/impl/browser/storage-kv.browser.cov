@@ -1,0 +1,73 @@
+(* Browser implementation of std.storage.kv using localStorage *)
+
+snippet id="std.storage.kv.set.browser" kind="extern-impl"
+
+implements="std.storage.kv.set"
+platform="browser"
+
+metadata
+  contract="@browser/localStorage.setItem"
+  description="Uses localStorage.setItem(key, value)"
+end
+
+end
+
+snippet id="std.storage.kv.get.browser" kind="extern-impl"
+
+implements="std.storage.kv.get"
+platform="browser"
+
+metadata
+  contract="@browser/localStorage.getItem"
+  description="Uses localStorage.getItem(key), returns null if not found"
+end
+
+end
+
+snippet id="std.storage.kv.delete.browser" kind="extern-impl"
+
+implements="std.storage.kv.delete"
+platform="browser"
+
+metadata
+  contract="@browser/localStorage.removeItem"
+  description="Uses localStorage.removeItem(key)"
+end
+
+end
+
+snippet id="std.storage.kv.has.browser" kind="extern-impl"
+
+implements="std.storage.kv.has"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-kv-has"
+  description="Returns localStorage.getItem(key) !== null"
+end
+
+end
+
+snippet id="std.storage.kv.list.browser" kind="extern-impl"
+
+implements="std.storage.kv.list"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-kv-list"
+  description="Iterates localStorage keys matching prefix"
+end
+
+end
+
+snippet id="std.storage.kv.clear.browser" kind="extern-impl"
+
+implements="std.storage.kv.clear"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-kv-clear"
+  description="Clears matching keys or all keys if no prefix"
+end
+
+end

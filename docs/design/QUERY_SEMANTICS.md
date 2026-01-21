@@ -1201,6 +1201,197 @@ For now, SQL bodies are treated as opaque strings with parameter binding validat
 
 ---
 
+## 16. IndexedDB Dialect (Cross-Platform Storage)
+
+The `indexeddb` dialect provides a cross-platform document store that uses Covenant's native query syntax (not opaque SQL bodies). It compiles to different backends based on target platform.
+
+### 16.1 Overview
+
+Unlike SQL dialects which pass through opaque body blocks, the `indexeddb` dialect uses Covenant's typed query syntax. This enables:
+
+- **Compile-time type checking** — Query structure is validated
+- **Cross-platform compilation** — Same query works on browser, Node.js, and WASI
+- **No injection risk** — Queries are AST, not string concatenation
+- **Optimizer integration** — Compiler can analyze and optimize queries
+
+### 16.2 Platform Compilation Targets
+
+| Platform | Backend | Implementation |
+|----------|---------|----------------|
+| Browser | IndexedDB | IDBKeyRange, cursor operations |
+| Node.js | SQLite | better-sqlite3 queries |
+| WASI | Embedded DB | libsql or similar |
+
+### 16.3 Query Syntax
+
+The `indexeddb` dialect uses standard Covenant query syntax with `target="std.storage"`:
+
+```covenant
+step id="s1" kind="query"
+  dialect="indexeddb"
+  target="std.storage"
+  select all
+  from="users"
+  where
+    and
+      equals field="status" lit="active"
+      equals field="role" lit="admin"
+    end
+  end
+  order by="created_at" dir="desc"
+  limit=50
+  as="active_admins"
+end
+```
+
+**Key differences from SQL dialects:**
+- No `body ... end` block — uses Covenant query syntax directly
+- No `params` section — variables bind automatically
+- No `returns` annotation — type inferred from collection schema
+
+### 16.4 Supported Query Features
+
+| Feature | Syntax | Browser Compilation |
+|---------|--------|---------------------|
+| Select all | `select all` | Full object retrieval |
+| Select fields | `select field="a" field="b"` | Projection after fetch |
+| Where equals | `equals field="f" lit=V` | Index lookup or cursor scan |
+| Where comparison | `greater field="f" lit=V` | IDBKeyRange.lowerBound |
+| Logical AND | `and ... end` | Intersection of results |
+| Logical OR | `or ... end` | Union of results |
+| Order by | `order by="f" dir="asc"` | Index direction or in-memory sort |
+| Limit/offset | `limit=N offset=M` | Cursor advance + count |
+| Contains (array) | `contains field="tags" lit="x"` | Multi-entry index or scan |
+
+**Not supported (use SQL dialect for these):**
+- Joins across collections
+- Aggregations (COUNT, SUM, AVG)
+- Subqueries
+- UNION/INTERSECT
+
+### 16.5 Index Declaration
+
+Indexes are created via `std.storage.doc.create_index`:
+
+```covenant
+step id="s1" kind="call"
+  fn="std.storage.doc.create_index"
+  arg name="collection" lit="users"
+  arg name="field" lit="status"
+  as="_"
+end
+```
+
+**Index usage:**
+- Queries on indexed fields use index lookup (O(log n))
+- Queries on non-indexed fields use full scan (O(n))
+- Compound indexes not yet supported
+
+### 16.6 Compilation Examples
+
+**Covenant query:**
+```covenant
+step id="s1" kind="query"
+  dialect="indexeddb"
+  target="std.storage"
+  select all
+  from="users"
+  where
+    and
+      equals field="status" lit="active"
+      greater field="age" lit=18
+    end
+  end
+  order by="name" dir="asc"
+  limit=10
+  as="results"
+end
+```
+
+**Browser (IndexedDB):**
+```javascript
+const tx = db.transaction('users', 'readonly');
+const store = tx.objectStore('users');
+const index = store.index('status');
+const range = IDBKeyRange.only('active');
+const results = [];
+let cursor = await index.openCursor(range);
+while (cursor && results.length < 10) {
+  if (cursor.value.age > 18) {
+    results.push(cursor.value);
+  }
+  cursor = await cursor.continue();
+}
+results.sort((a, b) => a.name.localeCompare(b.name));
+```
+
+**Node.js (SQLite):**
+```sql
+SELECT * FROM users
+WHERE status = 'active' AND age > 18
+ORDER BY name ASC
+LIMIT 10
+```
+
+### 16.7 Effect Requirement
+
+Using the `indexeddb` dialect requires declaring `effect std.storage`:
+
+```covenant
+snippet id="app.find_users" kind="fn"
+
+effects
+  effect std.storage
+end
+
+body
+  step id="s1" kind="query"
+    dialect="indexeddb"
+    target="std.storage"
+    // ...
+  end
+end
+
+end
+```
+
+### 16.8 Comparison with Function API
+
+Two approaches to query documents:
+
+**Query dialect (recommended for complex queries):**
+```covenant
+step id="s1" kind="query"
+  dialect="indexeddb"
+  target="std.storage"
+  select all
+  from="users"
+  where
+    equals field="status" lit="active"
+  end
+  as="users"
+end
+```
+
+**Function API (simpler, for basic queries):**
+```covenant
+step id="s1" kind="call"
+  fn="std.storage.doc.query"
+  arg name="collection" lit="users"
+  arg name="filter" lit='{"status": "active"}'
+  as="result"
+end
+```
+
+| Aspect | Query Dialect | Function API |
+|--------|---------------|--------------|
+| Type safety | Compile-time | Runtime only |
+| Query power | Full query syntax | JSON filter subset |
+| Verbosity | More verbose | More concise |
+| Optimization | Compiler-optimized | Runtime interpretation |
+
+---
+
 ## Related Documents
 
 - [DESIGN.md](DESIGN.md) - Section 5: Query System

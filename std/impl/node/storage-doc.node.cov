@@ -1,0 +1,98 @@
+(* Node.js implementation of std.storage.doc using SQLite *)
+
+snippet id="std.storage.doc.put.node" kind="extern-impl"
+
+implements="std.storage.doc.put"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="INSERT OR REPLACE into documents table with JSON data column"
+end
+
+end
+
+snippet id="std.storage.doc.get.node" kind="extern-impl"
+
+implements="std.storage.doc.get"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="SELECT by collection + id primary key"
+end
+
+end
+
+snippet id="std.storage.doc.delete.node" kind="extern-impl"
+
+implements="std.storage.doc.delete"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="DELETE by collection + id, returns changes > 0"
+end
+
+end
+
+snippet id="std.storage.doc.query.node" kind="extern-impl"
+
+implements="std.storage.doc.query"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="SELECT with JSON filter translated to SQL WHERE clause"
+end
+
+end
+
+snippet id="std.storage.doc.count.node" kind="extern-impl"
+
+implements="std.storage.doc.count"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="SELECT COUNT(*) with optional filter"
+end
+
+end
+
+snippet id="std.storage.doc.create_index.node" kind="extern-impl"
+
+implements="std.storage.doc.create_index"
+platform="node"
+
+metadata
+  contract="@node/better-sqlite3"
+  database="~/.covenant-storage/docs.sqlite"
+  description="CREATE INDEX on JSON-extracted field"
+end
+
+end
+
+(*
+   SQLite Schema:
+
+   CREATE TABLE IF NOT EXISTS documents (
+     collection TEXT NOT NULL,
+     id TEXT NOT NULL,
+     data JSON NOT NULL,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (collection, id)
+   );
+
+   CREATE INDEX IF NOT EXISTS idx_collection ON documents(collection);
+
+   Dynamic indexes created via:
+   CREATE INDEX IF NOT EXISTS idx_{collection}_{field}
+   ON documents(collection, json_extract(data, '$.{field}'));
+*)

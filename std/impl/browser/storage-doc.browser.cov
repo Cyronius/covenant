@@ -1,0 +1,79 @@
+(* Browser implementation of std.storage.doc using IndexedDB *)
+
+snippet id="std.storage.doc.put.browser" kind="extern-impl"
+
+implements="std.storage.doc.put"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-put"
+  database="covenant_storage"
+  description="Uses IndexedDB put() with auto-generated objectStore per collection"
+end
+
+end
+
+snippet id="std.storage.doc.get.browser" kind="extern-impl"
+
+implements="std.storage.doc.get"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-get"
+  database="covenant_storage"
+  description="Uses IndexedDB get() by primary key"
+end
+
+end
+
+snippet id="std.storage.doc.delete.browser" kind="extern-impl"
+
+implements="std.storage.doc.delete"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-delete"
+  database="covenant_storage"
+  description="Uses IndexedDB delete() by primary key"
+end
+
+end
+
+snippet id="std.storage.doc.query.browser" kind="extern-impl"
+
+implements="std.storage.doc.query"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-query"
+  database="covenant_storage"
+  description="Uses IndexedDB cursors with IDBKeyRange for filtering"
+end
+
+end
+
+snippet id="std.storage.doc.count.browser" kind="extern-impl"
+
+implements="std.storage.doc.count"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-count"
+  database="covenant_storage"
+  description="Uses IndexedDB count() or cursor iteration for filtered counts"
+end
+
+end
+
+snippet id="std.storage.doc.create_index.browser" kind="extern-impl"
+
+implements="std.storage.doc.create_index"
+platform="browser"
+
+metadata
+  contract="@browser/std-storage-idb-createIndex"
+  database="covenant_storage"
+  description="Creates IndexedDB index on objectStore (requires version upgrade)"
+end
+
+end

@@ -1,0 +1,96 @@
+(* WASI implementation of std.storage.doc using embedded database *)
+
+snippet id="std.storage.doc.put.wasi" kind="extern-impl"
+
+implements="std.storage.doc.put"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/put"
+  database="covenant-storage/docs.db"
+  description="Uses WASI-compatible embedded database (libsql or similar)"
+end
+
+end
+
+snippet id="std.storage.doc.get.wasi" kind="extern-impl"
+
+implements="std.storage.doc.get"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/get"
+  database="covenant-storage/docs.db"
+  description="Retrieves document by collection + id"
+end
+
+end
+
+snippet id="std.storage.doc.delete.wasi" kind="extern-impl"
+
+implements="std.storage.doc.delete"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/delete"
+  database="covenant-storage/docs.db"
+  description="Deletes document by collection + id"
+end
+
+end
+
+snippet id="std.storage.doc.query.wasi" kind="extern-impl"
+
+implements="std.storage.doc.query"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/query"
+  database="covenant-storage/docs.db"
+  description="Executes query with filter against embedded database"
+end
+
+end
+
+snippet id="std.storage.doc.count.wasi" kind="extern-impl"
+
+implements="std.storage.doc.count"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/count"
+  database="covenant-storage/docs.db"
+  description="Counts documents matching filter"
+end
+
+end
+
+snippet id="std.storage.doc.create_index.wasi" kind="extern-impl"
+
+implements="std.storage.doc.create_index"
+platform="wasi"
+
+metadata
+  contract="wasi:embedded-db/createIndex"
+  database="covenant-storage/docs.db"
+  description="Creates index on field for faster queries"
+end
+
+end
+
+(*
+   WASI Database Notes:
+
+   The WASI implementation uses an embedded database that supports:
+   - JSON document storage
+   - Basic indexing
+   - Query capabilities
+
+   Candidate implementations:
+   - libsql (SQLite fork with WASM support)
+   - DuckDB WASM
+   - Custom key-value store with JSON filtering
+
+   The host environment must provide the wasi:embedded-db interface
+   or map to an available storage mechanism.
+*)

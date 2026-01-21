@@ -1,0 +1,487 @@
+(* Cross-Platform Storage Example *)
+(*
+   Demonstrates std.storage.kv and std.storage.doc modules.
+   This code works identically on browser, Node.js, and WASI.
+*)
+
+(* ============================================================ *)
+(* Example 1: Key-Value Storage                                 *)
+(* ============================================================ *)
+
+(* Save and retrieve user preferences *)
+snippet id="example.kv.save_preference" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="save_preference"
+    param name="user_id" type="String"
+    param name="key" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  (* Build namespaced key: "prefs:{user_id}:{key}" *)
+  step id="s1" kind="compute"
+    op=concat
+    input lit="prefs:"
+    input var="user_id"
+    input lit=":"
+    input var="key"
+    as="storage_key"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.kv.set"
+    arg name="key" from="storage_key"
+    arg name="value" from="value"
+    as="_"
+  end
+end
+
+end
+
+(* Get a user preference *)
+snippet id="example.kv.get_preference" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="get_preference"
+    param name="user_id" type="String"
+    param name="key" type="String"
+    param name="default" type="String"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=concat
+    input lit="prefs:"
+    input var="user_id"
+    input lit=":"
+    input var="key"
+    as="storage_key"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.kv.get"
+    arg name="key" from="storage_key"
+    as="maybe_value"
+  end
+
+  (* Return value or default *)
+  step id="s3" kind="match"
+    from="maybe_value"
+
+    case pattern="Some(v)"
+      step id="s3a" kind="return"
+        from="v"
+        as="_"
+      end
+    end
+
+    case pattern="None"
+      step id="s3b" kind="return"
+        from="default"
+        as="_"
+      end
+    end
+
+    as="result"
+  end
+
+  step id="s4" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+(* List all preferences for a user *)
+snippet id="example.kv.list_preferences" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="list_user_prefs"
+    param name="user_id" type="String"
+    returns type="String[]"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=concat
+    input lit="prefs:"
+    input var="user_id"
+    input lit=":"
+    as="prefix"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.kv.list"
+    arg name="prefix" from="prefix"
+    as="keys"
+  end
+
+  step id="s3" kind="return"
+    from="keys"
+    as="_"
+  end
+end
+
+end
+
+(* ============================================================ *)
+(* Example 2: Document Storage with Function API                *)
+(* ============================================================ *)
+
+(* Create or update a user document *)
+snippet id="example.doc.save_user" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="save_user"
+    param name="id" type="String"
+    param name="name" type="String"
+    param name="email" type="String"
+    param name="role" type="String"
+    returns type="Document"
+  end
+end
+
+body
+  (* Build user data as JSON *)
+  step id="s1" kind="compute"
+    op=json_object
+    input lit="name" input var="name"
+    input lit="email" input var="email"
+    input lit="role" input var="role"
+    input lit="status" input lit="active"
+    as="user_data"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.doc.put"
+    arg name="collection" lit="users"
+    arg name="id" from="id"
+    arg name="data" from="user_data"
+    as="doc"
+  end
+
+  step id="s3" kind="return"
+    from="doc"
+    as="_"
+  end
+end
+
+end
+
+(* Find active admins using JSON filter API *)
+snippet id="example.doc.find_admins" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="find_active_admins"
+    returns type="Document[]"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="std.storage.doc.query"
+    arg name="collection" lit="users"
+    arg name="filter" lit='{"$and": [{"status": "active"}, {"role": "admin"}]}'
+    arg name="order_by" lit="name"
+    arg name="order_dir" lit="asc"
+    arg name="limit" lit=100
+    as="result"
+  end
+
+  step id="s2" kind="compute"
+    op=map_get
+    input var="result"
+    input lit="documents"
+    as="docs"
+  end
+
+  step id="s3" kind="return"
+    from="docs"
+    as="_"
+  end
+end
+
+end
+
+(* ============================================================ *)
+(* Example 3: Document Storage with Query Dialect               *)
+(* ============================================================ *)
+
+(* Find users by status and age using indexeddb dialect *)
+snippet id="example.doc.find_by_criteria" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="find_eligible_users"
+    param name="min_age" type="Int"
+    returns type="Document[]"
+  end
+end
+
+body
+  (* Use indexeddb dialect for type-safe, cross-platform queries *)
+  step id="s1" kind="query"
+    dialect="indexeddb"
+    target="std.storage"
+    select all
+    from="users"
+    where
+      and
+        equals field="status" lit="active"
+        greater field="age" var="min_age"
+      end
+    end
+    order by="created_at" dir="desc"
+    limit=50
+    as="users"
+  end
+
+  step id="s2" kind="return"
+    from="users"
+    as="_"
+  end
+end
+
+end
+
+(* Count pending orders *)
+snippet id="example.doc.count_pending" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="count_pending_orders"
+    returns type="Int"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="indexeddb"
+    target="std.storage"
+    select all
+    from="orders"
+    where
+      or
+        equals field="status" lit="pending"
+        equals field="status" lit="processing"
+      end
+    end
+    as="pending_orders"
+  end
+
+  step id="s2" kind="compute"
+    op=list_len
+    input var="pending_orders"
+    as="count"
+  end
+
+  step id="s3" kind="return"
+    from="count"
+    as="_"
+  end
+end
+
+end
+
+(* ============================================================ *)
+(* Example 4: Setup Indexes                                     *)
+(* ============================================================ *)
+
+(* Initialize storage with indexes for efficient queries *)
+snippet id="example.doc.setup_indexes" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="setup_storage"
+    returns type="Unit"
+  end
+end
+
+body
+  (* Create indexes on frequently queried fields *)
+  step id="s1" kind="call"
+    fn="std.storage.doc.create_index"
+    arg name="collection" lit="users"
+    arg name="field" lit="status"
+    as="_"
+  end
+
+  step id="s2" kind="call"
+    fn="std.storage.doc.create_index"
+    arg name="collection" lit="users"
+    arg name="field" lit="role"
+    as="_"
+  end
+
+  step id="s3" kind="call"
+    fn="std.storage.doc.create_index"
+    arg name="collection" lit="orders"
+    arg name="field" lit="status"
+    as="_"
+  end
+
+  step id="s4" kind="call"
+    fn="std.storage.doc.create_index"
+    arg name="collection" lit="orders"
+    arg name="field" lit="created_at"
+    as="_"
+  end
+
+  step id="s5" kind="return"
+    as="_"
+  end
+end
+
+end
+
+(* ============================================================ *)
+(* Example 5: Combined KV and Doc Usage                         *)
+(* ============================================================ *)
+
+(* Cache frequently accessed user data *)
+snippet id="example.combined.get_user_cached" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="get_user_cached"
+    param name="user_id" type="String"
+    returns union
+      type="Json" optional
+    end
+  end
+end
+
+body
+  (* Build cache key *)
+  step id="s1" kind="compute"
+    op=concat
+    input lit="cache:user:"
+    input var="user_id"
+    as="cache_key"
+  end
+
+  (* Check cache first *)
+  step id="s2" kind="call"
+    fn="std.storage.kv.get"
+    arg name="key" from="cache_key"
+    as="cached"
+  end
+
+  step id="s3" kind="match"
+    from="cached"
+
+    case pattern="Some(json_str)"
+      (* Parse cached JSON and return *)
+      step id="s3a" kind="compute"
+        op=json_parse
+        input var="json_str"
+        as="parsed"
+      end
+      step id="s3b" kind="return"
+        variant type="Some"
+          field name="value" from="parsed"
+        end
+        as="_"
+      end
+    end
+
+    case pattern="None"
+      (* Fetch from document store *)
+      step id="s3c" kind="call"
+        fn="std.storage.doc.get"
+        arg name="collection" lit="users"
+        arg name="id" from="user_id"
+        as="doc"
+      end
+
+      step id="s3d" kind="match"
+        from="doc"
+
+        case pattern="Some(d)"
+          (* Cache for future use *)
+          step id="s3d1" kind="compute"
+            op=map_get
+            input var="d"
+            input lit="data"
+            as="user_data"
+          end
+          step id="s3d2" kind="compute"
+            op=json_stringify
+            input var="user_data"
+            as="json_str"
+          end
+          step id="s3d3" kind="call"
+            fn="std.storage.kv.set"
+            arg name="key" from="cache_key"
+            arg name="value" from="json_str"
+            as="_"
+          end
+          step id="s3d4" kind="return"
+            variant type="Some"
+              field name="value" from="user_data"
+            end
+            as="_"
+          end
+        end
+
+        case pattern="None"
+          step id="s3d5" kind="return"
+            variant type="None"
+            end
+            as="_"
+          end
+        end
+
+        as="result"
+      end
+    end
+
+    as="final"
+  end
+
+  step id="s4" kind="return"
+    from="final"
+    as="_"
+  end
+end
+
+end
