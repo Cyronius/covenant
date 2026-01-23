@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// A symbol in the runtime symbol store
 ///
-/// This mirrors the `symbol` record in `wit/covenant-runtime.wit`
+/// This mirrors the `symbol` record in `runtime/wit/covenant-runtime.wit`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeSymbol {
     /// Unique identifier (e.g., "auth.login", "db.query")
@@ -119,7 +119,7 @@ impl From<&covenant_symbols::SymbolInfo> for RuntimeSymbol {
 
 /// Filter criteria for querying symbols
 ///
-/// This mirrors the `symbol-filter` record in `wit/covenant-runtime.wit`
+/// This mirrors the `symbol-filter` record in `runtime/wit/covenant-runtime.wit`
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SymbolFilter {
     /// Filter by kind (optional)

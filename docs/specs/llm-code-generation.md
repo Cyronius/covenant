@@ -19,7 +19,7 @@ The system shall maintain a condensed specification document optimized for LLM c
 - **Token budget**: 2,500-3,000 tokens
 - **Content coverage**: Core syntax, critical rules, common patterns, error checklist
 - **Format**: Markdown with code examples
-- **Location**: `llm-context/SPEC_CONDENSED.md`
+- **Location**: `tools/llm-eval/SPEC_CONDENSED.md`
 
 The condensed specification shall include:
 - Core philosophy and design principles
@@ -304,7 +304,7 @@ result = validator.validate(source_code)
 - Comprehensive documentation
 
 **Deliverables**:
-- `llm-context/` directory with all components
+- `tools/llm-eval/` directory with all components
 - CLI tools for testing and evaluation
 - Mock mode for testing without API costs
 - Ready for real API evaluation
@@ -497,9 +497,7 @@ The test suite shall be expanded when:
 - [QUERY_SEMANTICS.md](../design/QUERY_SEMANTICS.md) - Query system semantics
 
 **Implementation Files**:
-- [llm-context/](../../llm-context/) - Complete implementation
-- [llm-context/README.md](../../llm-context/README.md) - Usage guide
-- [llm-context/IMPLEMENTATION_SUMMARY.md](../../llm-context/IMPLEMENTATION_SUMMARY.md) - Implementation details
+- [tools/llm-eval/](../../tools/llm-eval/) - Complete implementation
 
 **Original Analysis**:
 - [Feasibility Analysis](../../.claude/implemented_plans/llm-generation-feasibility-analysis.md) - Archived plan

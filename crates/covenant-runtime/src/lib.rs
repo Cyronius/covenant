@@ -6,7 +6,7 @@
 //! - `Mutator`: Update snippets and trigger recompilation
 //!
 //! These modules are designed to be compiled to WASM and communicate via
-//! WIT interfaces defined in `wit/covenant-runtime.wit`.
+//! WIT interfaces defined in `runtime/wit/covenant-runtime.wit`.
 //!
 //! # Architecture
 //!

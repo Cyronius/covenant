@@ -953,15 +953,15 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
 
     // Try Deno runner first, fall back to Node.js
     let deno_runner_paths = [
-        exe_dir.as_ref().map(|d| d.join("../../host/run.deno.ts")).unwrap_or_default(),
-        PathBuf::from("host/run.deno.ts"),
-        PathBuf::from("../host/run.deno.ts"),
+        exe_dir.as_ref().map(|d| d.join("../../runtime/host/run.deno.ts")).unwrap_or_default(),
+        PathBuf::from("runtime/host/run.deno.ts"),
+        PathBuf::from("../runtime/host/run.deno.ts"),
     ];
 
     let node_runner_paths = [
-        exe_dir.as_ref().map(|d| d.join("../../host/run.mjs")).unwrap_or_default(),
-        PathBuf::from("host/run.mjs"),
-        PathBuf::from("../host/run.mjs"),
+        exe_dir.as_ref().map(|d| d.join("../../runtime/host/run.mjs")).unwrap_or_default(),
+        PathBuf::from("runtime/host/run.mjs"),
+        PathBuf::from("../runtime/host/run.mjs"),
     ];
 
     let (runtime, runner) = if let Some(r) = deno_runner_paths.iter().find(|p| p.exists()).cloned() {
@@ -969,7 +969,7 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
     } else if let Some(r) = node_runner_paths.iter().find(|p| p.exists()).cloned() {
         ("node", r)
     } else {
-        eprintln!("Error: Could not find host/run.deno.ts or host/run.mjs");
+        eprintln!("Error: Could not find runtime/host/run.deno.ts or runtime/host/run.mjs");
         eprintln!("Make sure you're running from the covenant project directory");
         std::process::exit(1);
     };

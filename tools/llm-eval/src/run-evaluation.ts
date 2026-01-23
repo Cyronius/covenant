@@ -262,7 +262,7 @@ async function main(): Promise<void> {
   }
 
   // Load spec
-  const specPath = new URL("../../llm-context/SPEC_CONDENSED.md", import.meta.url).pathname;
+  const specPath = new URL("../SPEC_CONDENSED.md", import.meta.url).pathname;
   let specContent: string;
   try {
     specContent = await Deno.readTextFile(specPath);

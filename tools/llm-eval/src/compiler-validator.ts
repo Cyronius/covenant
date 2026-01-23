@@ -2,11 +2,11 @@
  * Compiler Integration Validator for Covenant LLM Generation.
  *
  * Validates generated Covenant code using the WASM-based compiler modules
- * from host/src/loader.ts. Falls back to covenant-cli subprocess if WASM
+ * from runtime/host/src/loader.ts. Falls back to covenant-cli subprocess if WASM
  * modules are not available.
  */
 
-import { CovenantHost } from "../../host/src/loader.ts";
+import { CovenantHost } from "../../runtime/host/src/loader.ts";
 import type {
   CompilationPhase,
   CompilerError,

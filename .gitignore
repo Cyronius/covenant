@@ -19,6 +19,8 @@ Cargo.lock
 
 # Dependencies (when package manager exists)
 /node_modules/
+runtime/host/node_modules/
+runtime/host/dist/
 
 # Claude Code stuff
 .claude/plans/
