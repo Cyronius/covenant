@@ -115,7 +115,18 @@ No grep. No guessing. Structured queries over a semantic graph.
 | Comments describe intent | Types and effects encode intent |
 | Files are text | Codebase is a queryable graph |
 
-**WASM target**: Compiles to WebAssembly for sandboxed, capability-constrained, metered execution.
+### Runtime Targets
+
+Covenant compiles to WASM and runs on multiple platforms:
+
+| Target | Runtime | Command |
+|--------|---------|---------|
+| **Deno** (default) | `run.deno.ts` — loads WASM, provides I/O | `covenant run <file>` |
+| **Node.js** (fallback) | `run.mjs` — same interface, Node APIs | `covenant run <file>` |
+| **Browser** | Host loader — fetch WASM, link modules | Import via `loader.ts` |
+| **WASI** | WASI 0.2 Components | `--target=wasi` |
+
+`covenant run` compiles and executes in one step, using Deno by default with Node.js as fallback.
 
 ---
 

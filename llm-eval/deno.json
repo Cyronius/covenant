@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "imports": {
+    "ai": "npm:ai@^6.0.48",
+    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^3.0.23",
+    "@ai-sdk/openai": "npm:@ai-sdk/openai@^3.0.18"
+  },
+  "tasks": {
+    "eval": "deno run --allow-read --allow-write --allow-env --allow-net src/run-evaluation.ts",
+    "eval:mock": "deno run --allow-read --allow-write --allow-env src/run-evaluation.ts --provider mock",
+    "eval:sample": "deno run --allow-read --allow-write --allow-env --allow-net src/run-evaluation.ts --sample 20",
+    "check": "deno check src/mod.ts"
+  }
+}
