@@ -1,4 +1,5 @@
 // Structured Concurrency - parallel I/O without threads or async/await
+// parallel and race are built-in step kinds (no effect import needed)
 
 // Example 1: Parallel HTTP requests
 // Fetch multiple resources simultaneously, wait for all to complete
@@ -6,7 +7,6 @@
 snippet id="dashboard.fetch_data" kind="fn"
 
 effects
-  effect std.concurrent
   effect network
 end
 
@@ -23,7 +23,7 @@ end
 
 body
   // All three HTTP requests execute in parallel
-  step id="s1" kind="std.concurrent.parallel"
+  step id="s1" kind="parallel"
     branch id="b1"
       step id="b1.1" kind="call"
         fn="http.get"
@@ -90,7 +90,6 @@ end
 snippet id="resilient.fetch_all" kind="fn"
 
 effects
-  effect std.concurrent
   effect network
 end
 
@@ -106,7 +105,7 @@ end
 
 body
   // collect_all waits for everything, doesn't cancel on error
-  step id="s1" kind="std.concurrent.parallel"
+  step id="s1" kind="parallel"
     on_error="collect_all"
 
     branch id="b1"
@@ -150,7 +149,6 @@ end
 snippet id="cache.get_with_fallback" kind="fn"
 
 effects
-  effect std.concurrent
   effect database
   effect network
 end
@@ -168,7 +166,7 @@ end
 body
   // Race: try cache first, but also start DB query
   // Return whichever completes first
-  step id="s1" kind="std.concurrent.race"
+  step id="s1" kind="race"
     branch id="b1"
       step id="b1.1" kind="call"
         fn="redis.get"
@@ -203,7 +201,6 @@ end
 snippet id="api.fetch_with_timeout" kind="fn"
 
 effects
-  effect std.concurrent
   effect network
 end
 
@@ -219,7 +216,7 @@ signature
 end
 
 body
-  step id="s1" kind="std.concurrent.parallel"
+  step id="s1" kind="parallel"
     timeout=5s
     on_timeout="cancel"
 
@@ -245,8 +242,8 @@ end
 
 // Key points:
 // 1. No threads, no async/await keywords
-// 2. Concurrency is scoped - you always wait for results
-// 3. Results are deterministic - collected in declaration order
-// 4. Branches are isolated - no shared mutable state
-// 5. Error handling is explicit per-block
-// 6. Effect std.concurrent required to use parallel/race
+// 2. parallel and race are built-in step kinds (no effect import needed)
+// 3. Concurrency is scoped - you always wait for results
+// 4. Results are deterministic - collected in declaration order
+// 5. Branches are isolated - no shared mutable state
+// 6. Error handling is explicit per-block

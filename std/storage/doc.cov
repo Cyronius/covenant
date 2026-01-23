@@ -1,6 +1,7 @@
 (* std.storage.doc - Cross-Platform Document Store *)
 (*
    Provides document storage with queries that works across all platforms:
+   - Deno: Deno KV (built-in, structured keys)
    - Browser: IndexedDB
    - Node.js: SQLite (better-sqlite3)
    - WASI: Embedded database
@@ -57,6 +58,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -87,6 +89,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -115,6 +118,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -147,6 +151,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -175,6 +180,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -203,6 +209,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -272,7 +279,7 @@ end
 
    Benefits:
    - Compile-time type checking
-   - Cross-platform (same query on browser/node/wasi)
+   - Cross-platform (same query on deno/browser/node/wasi)
    - Optimizer integration
    - No SQL injection risk
 

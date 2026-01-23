@@ -20,7 +20,7 @@ top_level_item = snippet | refactor_block ;
 
 snippet        = "snippet" snippet_header { note_decl } { section } "end" ;
 snippet_header = "id" "=" STRING "kind" "=" snippet_kind ;
-snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" | "data" | "effect-kind" ;
+snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" | "data" ;
 
 (* === Refactor Block === *)
 (* Multi-snippet transformations with transactional semantics *)
@@ -43,9 +43,7 @@ section        = effects_section
                | metadata_section
                | relations_section
                | content_section
-               | schema_section
-               | kinds_section
-               | effects_required_section ;
+               | schema_section ;
 
 (* === Effects Section === *)
 (* Declares capabilities this snippet requires *)
@@ -116,23 +114,16 @@ enum_signature   = "enum" "name" "=" STRING { enum_variant } "end" ;
 body_section   = "body" { step } "end" ;
 
 step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
-step_kind      = core_step_kind | extended_step_kind ;
-
-(* Core step kinds - built-in, no import needed *)
-core_step_kind = "compute" | "call" | "query" | "bind" | "return"
+step_kind      = "compute" | "call" | "query" | "bind" | "return"
                | "if" | "match" | "for" | "insert" | "update" | "delete"
                | "transaction" | "update_snippet" | "update_all"
-               | "traverse" | "construct" ;
-
-(* Extended step kinds - imported via effects, namespaced *)
-(* Examples: std.concurrent.parallel, std.concurrent.race, acme.workflow.approval *)
-extended_step_kind = IDENT "." IDENT "." IDENT ;
+               | "traverse" | "construct" | "parallel" | "race" ;
 
 step_body      = compute_body | call_body | query_body | bind_body | return_body
                | if_body | match_body | for_body
                | insert_body | update_body | delete_body
                | transaction_body | update_snippet_body | update_all_body
-               | traverse_body | construct_body | extended_step_body ;
+               | traverse_body | construct_body | parallel_body | race_body ;
 
 (* --- Compute: arithmetic and logic --- *)
 compute_body   = "op" "=" binary_op input input
@@ -358,16 +349,16 @@ construct_body = "struct" { constructor_field } "end"
                | "collection" { collection_item } "end" ;
 collection_item = "item" ( "from" "=" STRING | "lit" "=" literal ) ;
 
-(* --- Extended Step Body: for kinds imported via effects --- *)
-(* Structure is validated against the kind definition, not the grammar *)
-(* Common patterns: branch-based (parallel, race), stage-based (workflow) *)
-extended_step_body = { extended_step_attr } { branch_def } ;
+(* --- Parallel: execute branches concurrently, wait for all --- *)
+parallel_body  = [ parallel_attrs ] { branch_def } ;
+parallel_attrs = { "on_error" "=" ( "fail_fast" | "collect_all" | "ignore_errors" )
+                 | "timeout" "=" duration
+                 | "on_timeout" "=" ( "cancel" | "return_partial" ) } ;
 
-extended_step_attr = "on_error" "=" ( "fail_fast" | "collect_all" | "ignore_errors" )
-                   | "timeout" "=" duration
-                   | "on_timeout" "=" ( "cancel" | "return_partial" ) ;
+(* --- Race: execute branches concurrently, return first to complete --- *)
+race_body      = [ "timeout" "=" duration ] { branch_def } ;
 
-(* Branch: parallel execution unit within extended steps *)
+(* Branch: execution unit within parallel/race steps *)
 branch_def     = "branch" "id" "=" STRING { step } "end" ;
 
 (* === Tests Section === *)
@@ -437,32 +428,6 @@ field_modifiers = { "optional" | "primary_key" "=" ( "true" | "false" ) } ;
 table_def      = "table" "name" "=" STRING { table_field } "end" ;
 table_field    = "field" "name" "=" STRING "type" "=" type_ref [ field_modifiers ] ;
 
-(* === Kinds Section (for effect-kind snippets) === *)
-(* Defines new step or snippet kinds that can be imported via effects *)
-kinds_section  = "kinds" { kind_def } "end" ;
-kind_def       = "kind" "name" "=" STRING { note_decl } kind_structure [ kind_semantics ] "compile_to" "=" STRING "end" ;
-
-kind_structure = "structure" { kind_structure_item } "end" ;
-kind_structure_item = kind_section_def | kind_field_def ;
-
-kind_section_def = "section" "name" "=" STRING { kind_section_attr } [ kind_contains ] "end" ;
-kind_section_attr = "multiple" "=" ( "true" | "false" )
-                  | "required" "=" ( "true" | "false" ) ;
-kind_contains  = "contains" "kind" "=" STRING ;
-
-kind_field_def = "field" "name" "=" STRING "type" "=" kind_field_type [ kind_field_attrs ] ;
-kind_field_type = "String" | "Int" | "Bool" | "Duration" | "Enum" ;
-kind_field_attrs = { "optional" "=" ( "true" | "false" )
-                   | "required" "=" ( "true" | "false" )
-                   | "default" "=" literal
-                   | "values" "=" array_literal } ;
-
-kind_semantics = "semantics" { kind_semantic_attr } "end" ;
-kind_semantic_attr = IDENT "=" ( literal | IDENT ) ;
-
-(* === Effects Required Section (for effect-kind snippets) === *)
-(* Declares effects that users of this kind must have *)
-effects_required_section = "effects_required" { effect_decl } "end" ;
 
 (* === Type References === *)
 type_ref       = type_path [ type_modifiers ] ;
@@ -496,8 +461,8 @@ COMMENT        = "//" { any_char_except_newline } NEWLINE ;
 
 (* === Reserved Keywords (canonical list) === *)
 (*
-   Blocks: snippet, end, effects, requires, types, tools, signature, body, tests, metadata, refactor, relations, content, schema, kinds, effects_required
-   Snippet Kinds: fn, struct, enum, module, database, extern, test, data, effect-kind
+   Blocks: snippet, end, effects, requires, types, tools, signature, body, tests, metadata, refactor, relations, content, schema
+   Snippet Kinds: fn, struct, enum, module, database, extern, test, data
    Types: struct, enum, alias, field, variant, fn, param, returns, union, generic, type, collection, of
    Effects: effect
    Requirements: req, text, priority, status
@@ -525,8 +490,7 @@ COMMENT        = "//" { any_char_except_newline } NEWLINE ;
    Literals: true, false, none
    Modifiers: optional, default, constraint, handle, wildcard, binding, literal, primary_key, multiple, required, values
    Notes: note, lang
-   Kind Definitions: kinds, structure, section, contains, semantics, compile_to
-   Concurrency: branch, on_error, fail_fast, collect_all, ignore_errors, on_timeout, cancel, return_partial
+   Concurrency: parallel, race, branch, on_error, fail_fast, collect_all, ignore_errors, on_timeout, cancel, return_partial
    Relations: rel, to, from, type, contains, contained_by, next, previous, describes, described_by, elaborates_on, contrasts_with, example_of, supersedes, precedes, version_of, causes, caused_by, motivates, enables, related_to, depends_on, implements, implemented_by
    Traversal: traverse, follow, depth, unbounded, direction, outgoing, incoming, both
    Relation Queries: rel_to, rel_from, has_rel, source

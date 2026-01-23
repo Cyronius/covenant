@@ -1338,12 +1338,11 @@ end
     // === Concurrent Steps ===
 
     #[test]
-    #[ignore = "Concurrent step syntax (std.concurrent.parallel) not yet implemented"]
+    #[ignore = "Built-in parallel step kind not yet implemented in parser"]
     fn test_parse_parallel_step() {
         let source = r#"
 snippet id="app.fetch_all" kind="fn"
 effects
-  effect std.concurrent
   effect network
 end
 signature
@@ -1352,7 +1351,7 @@ signature
   end
 end
 body
-  step id="s1" kind="std.concurrent.parallel"
+  step id="s1" kind="parallel"
     branch id="b1"
       step id="b1.1" kind="call"
         fn="http.get"
@@ -1381,12 +1380,11 @@ end
     }
 
     #[test]
-    #[ignore = "Concurrent step syntax (std.concurrent.race) not yet implemented"]
+    #[ignore = "Built-in race step kind not yet implemented in parser"]
     fn test_parse_race_step() {
         let source = r#"
 snippet id="cache.get_with_fallback" kind="fn"
 effects
-  effect std.concurrent
   effect network
 end
 signature
@@ -1396,7 +1394,7 @@ signature
   end
 end
 body
-  step id="s1" kind="std.concurrent.race"
+  step id="s1" kind="race"
     branch id="b1"
       step id="b1.1" kind="call"
         fn="cache.get"

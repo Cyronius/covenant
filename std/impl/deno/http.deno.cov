@@ -1,0 +1,53 @@
+(* Deno implementation of HTTP using native fetch() API *)
+(*
+   Deno provides fetch() as a built-in global -- no npm dependencies needed.
+   This is the same API used by the browser target, but runs server-side.
+*)
+
+snippet id="http.get.deno" kind="extern-impl"
+
+implements="http.get"
+platform="deno"
+
+metadata
+  contract="@deno/fetch.get"
+  description="Uses native Deno fetch() with GET method"
+end
+
+end
+
+snippet id="http.post.deno" kind="extern-impl"
+
+implements="http.post"
+platform="deno"
+
+metadata
+  contract="@deno/fetch.post"
+  description="Uses native Deno fetch() with POST method and body"
+end
+
+end
+
+snippet id="http.put.deno" kind="extern-impl"
+
+implements="http.put"
+platform="deno"
+
+metadata
+  contract="@deno/fetch.put"
+  description="Uses native Deno fetch() with PUT method and body"
+end
+
+end
+
+snippet id="http.delete.deno" kind="extern-impl"
+
+implements="http.delete"
+platform="deno"
+
+metadata
+  contract="@deno/fetch.delete"
+  description="Uses native Deno fetch() with DELETE method"
+end
+
+end

@@ -296,8 +296,12 @@ impl<'a> SnippetWasmCompiler<'a> {
         }
         module.section(&func_section);
 
-        // Memory section (if we have data, effects, or string literals)
-        let needs_memory = !self.data_segment.is_empty() || !all_effects.is_empty() || has_strings;
+        // Memory section - always export memory when compiling functions
+        // The runtime requires exported memory to run WASM modules
+        let needs_memory = !functions.is_empty()
+            || !self.data_segment.is_empty()
+            || !all_effects.is_empty()
+            || has_strings;
         if needs_memory {
             let mut memory = MemorySection::new();
             // 1 page = 64KB, start with 16 pages (1MB)

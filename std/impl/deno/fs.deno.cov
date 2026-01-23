@@ -1,0 +1,76 @@
+(* Deno implementation of filesystem operations *)
+(*
+   Uses Deno's built-in filesystem APIs:
+   - Deno.readTextFile / Deno.readFile
+   - Deno.writeTextFile / Deno.writeFile
+   - Deno.remove
+   - Deno.stat
+   - Deno.readDir
+
+   Requires: --allow-read and/or --allow-write permissions
+*)
+
+snippet id="fs.readFile.deno" kind="extern-impl"
+
+implements="fs.readFile"
+platform="deno"
+
+metadata
+  contract="@deno/fs.readFile"
+  description="Uses Deno.readFile() for binary, Deno.readTextFile() for text"
+  permissions="read"
+end
+
+end
+
+snippet id="fs.writeFile.deno" kind="extern-impl"
+
+implements="fs.writeFile"
+platform="deno"
+
+metadata
+  contract="@deno/fs.writeFile"
+  description="Uses Deno.writeFile() for binary, Deno.writeTextFile() for text"
+  permissions="write"
+end
+
+end
+
+snippet id="fs.remove.deno" kind="extern-impl"
+
+implements="fs.remove"
+platform="deno"
+
+metadata
+  contract="@deno/fs.remove"
+  description="Uses Deno.remove(path, { recursive })"
+  permissions="write"
+end
+
+end
+
+snippet id="fs.stat.deno" kind="extern-impl"
+
+implements="fs.stat"
+platform="deno"
+
+metadata
+  contract="@deno/fs.stat"
+  description="Uses Deno.stat() to get file metadata"
+  permissions="read"
+end
+
+end
+
+snippet id="fs.readDir.deno" kind="extern-impl"
+
+implements="fs.readDir"
+platform="deno"
+
+metadata
+  contract="@deno/fs.readDir"
+  description="Uses Deno.readDir() to list directory entries"
+  permissions="read"
+end
+
+end

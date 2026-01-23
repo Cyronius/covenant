@@ -219,8 +219,14 @@ export class CovenantHost {
   // === Private Methods ===
 
   private async fetchWasm(path: string): Promise<ArrayBuffer> {
+    // Deno environment (preferred)
+    if (typeof (globalThis as any).Deno !== "undefined") {
+      const buffer = await (globalThis as any).Deno.readFile(path);
+      return buffer.buffer;
+    }
+
     // Browser environment
-    if (typeof fetch !== "undefined") {
+    if (typeof fetch !== "undefined" && typeof (globalThis as any).Deno === "undefined") {
       const response = await fetch(path);
       return response.arrayBuffer();
     }

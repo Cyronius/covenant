@@ -1,6 +1,6 @@
 # Covenant
 
-A machine-first programming language designed for LLM generation and navigation. Compiles to WASM.
+A machine-first programming language designed for LLM generation and navigation. Compiles to WASM. Default runtime target is Deno.
 
 ---
 
@@ -323,16 +323,11 @@ symbol_metadata = {
 
 ### Structured Concurrency
 
-Parallel I/O without threads or async/await. Import via `effect std.concurrent`.
+Parallel I/O without threads or async/await. `parallel` and `race` are built-in step kinds.
 
 ```
-effects
-  effect std.concurrent
-  effect network
-end
-
 body
-  step id="s1" kind="std.concurrent.parallel"
+  step id="s1" kind="parallel"
     branch id="b1"
       step id="b1.1" kind="call"
         fn="http.get"
@@ -353,39 +348,13 @@ end
 ```
 
 **Key points:**
-- `std.concurrent.parallel` — execute branches concurrently, wait for all
-- `std.concurrent.race` — execute branches, return first to complete
+- `parallel` — execute branches concurrently, wait for all
+- `race` — execute branches, return first to complete
+- Built-in step kinds (no effect import needed)
 - Results in declaration order (deterministic)
 - Branches isolated — no shared mutable state
 - `on_error="fail_fast"` (default), `"collect_all"`, or `"ignore_errors"`
 - `timeout=5s` with `on_timeout="cancel"` or `"return_partial"`
-
-### Extensible Kinds
-
-Kinds can be imported via effects. Custom kinds defined with `kind="effect-kind"`:
-
-```
-snippet id="myorg.custom" kind="effect-kind"
-
-kinds
-  kind name="my_construct"
-    structure
-      section name="item" multiple=true required=true
-        contains kind="step"
-      end
-    end
-    compile_to="myorg_runtime"
-  end
-end
-
-effects_required
-  effect myorg.runtime
-end
-
-end
-```
-
-Use via: `effect myorg.custom` then `kind="myorg.custom.my_construct"`
 
 ### Cross-Platform Storage (`std.storage`)
 
@@ -464,11 +433,10 @@ end
 | `std.storage.doc.create_index` | Create index for faster queries |
 
 **Platform backends:**
+- Deno: Deno KV (both kv and doc) — default target
 - Browser: localStorage (kv), IndexedDB (doc)
 - Node.js: Files (kv), SQLite (doc)
 - WASI: Preopened dir (kv), Embedded DB (doc)
-
-See [EXTENSIBLE_KINDS.md](../docs/design/EXTENSIBLE_KINDS.md) for full specification.
 
 ---
 
@@ -504,6 +472,6 @@ See [EXTENSIBLE_KINDS.md](../docs/design/EXTENSIBLE_KINDS.md) for full specifica
 
 ## Status
 
-**Design phase.** No compiler exists yet.
+**Active development.** Compiler pipeline implemented and functional (13 crates, CLI, WASM codegen).
 
-Current focus: finalize IR syntax, define AST schema, build parser.
+Current focus: structured concurrency, cross-platform storage, cross-snippet type checking.

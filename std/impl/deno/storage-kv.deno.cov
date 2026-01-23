@@ -1,0 +1,73 @@
+(* Deno implementation of std.storage.kv using Deno KV *)
+
+snippet id="std.storage.kv.set.deno" kind="extern-impl"
+
+implements="std.storage.kv.set"
+platform="deno"
+
+metadata
+  contract="@deno/kv.set"
+  description="Uses Deno.openKv().set(['covenant', 'kv', key], value)"
+end
+
+end
+
+snippet id="std.storage.kv.get.deno" kind="extern-impl"
+
+implements="std.storage.kv.get"
+platform="deno"
+
+metadata
+  contract="@deno/kv.get"
+  description="Uses Deno.openKv().get(['covenant', 'kv', key]), returns none if not found"
+end
+
+end
+
+snippet id="std.storage.kv.delete.deno" kind="extern-impl"
+
+implements="std.storage.kv.delete"
+platform="deno"
+
+metadata
+  contract="@deno/kv.delete"
+  description="Uses Deno.openKv().delete(['covenant', 'kv', key])"
+end
+
+end
+
+snippet id="std.storage.kv.has.deno" kind="extern-impl"
+
+implements="std.storage.kv.has"
+platform="deno"
+
+metadata
+  contract="@deno/kv.has"
+  description="Uses Deno.openKv().get(...) and checks value !== null"
+end
+
+end
+
+snippet id="std.storage.kv.list.deno" kind="extern-impl"
+
+implements="std.storage.kv.list"
+platform="deno"
+
+metadata
+  contract="@deno/kv.list"
+  description="Uses Deno.openKv().list({ prefix: ['covenant', 'kv', prefix] })"
+end
+
+end
+
+snippet id="std.storage.kv.clear.deno" kind="extern-impl"
+
+implements="std.storage.kv.clear"
+platform="deno"
+
+metadata
+  contract="@deno/kv.clear"
+  description="Lists keys by prefix then atomically deletes all matching entries"
+end
+
+end

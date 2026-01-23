@@ -53,8 +53,7 @@ fn test_all_examples_parse() {
 
     // Examples that use features not yet implemented in the parser
     let skip_files = [
-        "21-structured-concurrency.cov", // Uses std.concurrent.parallel syntax
-        "22-effect-kinds.cov",           // Uses effect-kind snippet kind
+        "21-structured-concurrency.cov", // Uses parallel/race step kinds (not yet parsed)
         "24-cross-platform-storage.cov", // Uses ML-style comments and dotted effect names
     ];
 

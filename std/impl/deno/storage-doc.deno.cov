@@ -1,0 +1,86 @@
+(* Deno implementation of std.storage.doc using Deno KV *)
+
+snippet id="std.storage.doc.put.deno" kind="extern-impl"
+
+implements="std.storage.doc.put"
+platform="deno"
+
+metadata
+  contract="@deno/kv.set"
+  description="kv.set(['covenant', 'doc', collection, id], { data, created_at, updated_at })"
+end
+
+end
+
+snippet id="std.storage.doc.get.deno" kind="extern-impl"
+
+implements="std.storage.doc.get"
+platform="deno"
+
+metadata
+  contract="@deno/kv.get"
+  description="kv.get(['covenant', 'doc', collection, id]), returns none if not found"
+end
+
+end
+
+snippet id="std.storage.doc.delete.deno" kind="extern-impl"
+
+implements="std.storage.doc.delete"
+platform="deno"
+
+metadata
+  contract="@deno/kv.delete"
+  description="kv.delete(['covenant', 'doc', collection, id])"
+end
+
+end
+
+snippet id="std.storage.doc.query.deno" kind="extern-impl"
+
+implements="std.storage.doc.query"
+platform="deno"
+
+metadata
+  contract="@deno/kv.list"
+  description="kv.list({ prefix: ['covenant', 'doc', collection] }) with in-memory filter"
+end
+
+end
+
+snippet id="std.storage.doc.count.deno" kind="extern-impl"
+
+implements="std.storage.doc.count"
+platform="deno"
+
+metadata
+  contract="@deno/kv.list"
+  description="kv.list({ prefix: ['covenant', 'doc', collection] }) with filter, return count"
+end
+
+end
+
+snippet id="std.storage.doc.create_index.deno" kind="extern-impl"
+
+implements="std.storage.doc.create_index"
+platform="deno"
+
+metadata
+  contract="@deno/kv.set"
+  description="Creates secondary index entries: kv.set(['covenant', 'idx', collection, field, value, id], id)"
+end
+
+end
+
+(*
+   Deno KV Key Structure:
+
+   Documents:
+     ['covenant', 'doc', collection, id] → { data, created_at, updated_at }
+
+   Secondary indexes (optional, created via create_index):
+     ['covenant', 'idx', collection, field, field_value, doc_id] → doc_id
+
+   Queries without indexes use prefix listing + in-memory filtering.
+   Queries with indexes use the index prefix to narrow results.
+*)

@@ -1,6 +1,7 @@
 (* std.storage.kv - Cross-Platform Key-Value Store *)
 (*
    Provides simple key-value storage that works across all platforms:
+   - Deno: Deno KV (built-in, default target)
    - Browser: localStorage
    - Node.js: File-based storage (~/.covenant-storage/kv/)
    - WASI: Preopened directory
@@ -16,7 +17,7 @@ snippet id="std.storage" kind="effect"
 
 metadata
   description="Cross-platform storage capability"
-  platforms platform="browser" platform="node" platform="wasi" end
+  platforms platform="deno" platform="browser" platform="node" platform="wasi" end
 end
 
 end
@@ -41,6 +42,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -70,6 +72,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -97,6 +100,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -124,6 +128,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -151,6 +156,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"
@@ -178,6 +184,7 @@ signature
 end
 
 platforms
+  platform="deno"
   platform="browser"
   platform="node"
   platform="wasi"

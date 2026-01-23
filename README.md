@@ -153,9 +153,36 @@ No grep. No guessing. Structured queries over a semantic graph.
 
 ## Status
 
-**Design phase.** No compiler exists yet.
+**Active development.** The compiler pipeline is implemented and functional.
 
-Current focus: finalize syntax, define AST, build parser.
+### What Works
+- **Full compiler pipeline**: lex → parse → symbol graph → type check → codegen → WASM
+- **CLI tool** (`covenant`): `parse`, `check`, `compile`, `query`, `info`, `explain`, `effects`, `requirements`, `repl`, `run`
+- **23 example programs** covering all major features
+- **Integration tests** passing (parsing, symbol graphs, type checking, effect validation, WASM codegen)
+
+### Architecture (13 crates)
+
+| Crate | Role |
+|-------|------|
+| `covenant-lexer` | Tokenization |
+| `covenant-parser` | Recursive descent parser with error recovery |
+| `covenant-ast` | AST definitions |
+| `covenant-symbols` | Symbol graph with bidirectional references |
+| `covenant-checker` | Type checker and effect validator |
+| `covenant-graph` | Query engine |
+| `covenant-codegen` | WASM code generation |
+| `covenant-runtime` | Runtime query and mutation engine |
+| `covenant-storage` | Symbol store with versioning |
+| `covenant-optimizer` | Optimization passes |
+| `covenant-requirements` | Requirement coverage validation |
+| `covenant-llm` | AI explanation and code generation |
+| `covenant-cli` | Command-line interface |
+
+### Current Focus
+- Structured concurrency (built-in `parallel` / `race` step kinds)
+- Cross-platform storage (`std.storage`)
+- Cross-snippet type checking
 
 ---
 

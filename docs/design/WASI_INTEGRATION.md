@@ -57,7 +57,7 @@ Covenant effects map directly to WIT interface imports:
 | `effect storage` | `wasi:keyvalue/store` | WASI 0.2 Phase 2 |
 | `effect random` | `wasi:random/random` | WASI 0.2 stable |
 | `effect database` | `covenant:database/sql` | Custom (see below) |
-| `effect std.concurrent` | `future<T>`, subtasks | WASI 0.3 (Nov 2025) |
+| `parallel`/`race` steps | `future<T>`, subtasks | WASI 0.3 |
 
 ### Example: Effect Declaration to Imports
 
@@ -403,7 +403,7 @@ This enables self-contained modules that can execute project queries without hos
 
 ## Structured Concurrency (WASI 0.3)
 
-Covenant's `std.concurrent.parallel` and `std.concurrent.race` constructs require native async support in the Component Model.
+Covenant's built-in `parallel` and `race` step kinds require native async support in the Component Model.
 
 ### WASI 0.3 Features (Preview Aug 2025, Stable Nov 2025)
 
@@ -418,8 +418,8 @@ WASI 0.3 introduces composable concurrency at the component model level:
 
 | Covenant Construct | WASI 0.3 Mapping |
 |--------------------|------------------|
-| `std.concurrent.parallel` | Multiple `future<T>` spawned, all awaited |
-| `std.concurrent.race` | Multiple `future<T>` spawned, first-to-complete returned |
+| `kind="parallel"` | Multiple `future<T>` spawned, all awaited |
+| `kind="race"` | Multiple `future<T>` spawned, first-to-complete returned |
 | `on_error="fail_fast"` | Cancel pending futures on first error |
 | `on_error="collect_all"` | Await all futures, aggregate errors |
 | `timeout=5s` | Race with `future<T>` from clock subscription |
@@ -427,7 +427,7 @@ WASI 0.3 introduces composable concurrency at the component model level:
 
 ### Compilation Strategy for WASI 0.3
 
-**`std.concurrent.parallel` compiles to:**
+**`kind="parallel"` compiles to:**
 
 ```wit
 // Each branch becomes a future
@@ -436,7 +436,7 @@ parallel-results: func() -> tuple<future<users-result>, future<products-result>>
 
 ```
 // Covenant source
-step id="s1" kind="std.concurrent.parallel"
+step id="s1" kind="parallel"
   branch id="b1"
     step id="b1.1" kind="call"
       fn="http.get"
@@ -503,20 +503,20 @@ This enables:
 | Milestone | Date | Covenant Impact |
 |-----------|------|-----------------|
 | WASI 0.3 Preview | Aug 2025 | Begin integration testing |
-| WASI 0.3 Stable | Nov 2025 | Enable `--target=wasi` with `effect std.concurrent` |
+| WASI 0.3 Stable | Nov 2025 | Enable `--target=wasi` with `parallel`/`race` steps |
 | Covenant 1.0 | TBD | Full WASI 0.3 support |
 
 ### Until WASI 0.3
 
 - Structured concurrency works in `--target=browser` and `--target=node` (Promise-based)
-- `--target=wasi` compilation fails if `effect std.concurrent` is used
+- `--target=wasi` compilation fails if `parallel` or `race` steps are used
 
 ```
 Error E_WASI_001: Structured concurrency requires WASI 0.3
   --> app.cov:5:3
    |
- 5 |   effect std.concurrent
-   |   ^^^^^^^^^^^^^^^^^^^^^ 'std.concurrent' not available on WASI 0.2 target
+ 5 |   step id="s1" kind="parallel"
+   |                ^^^^^^^^^^^^^^^^ 'parallel' not available on WASI 0.2 target
    |
    = hint: Use --target=browser or --target=node, or wait for WASI 0.3 support
 ```
@@ -641,7 +641,7 @@ The compiler selects the appropriate binding based on `--target`.
 ### WASI 0.3 (Preview Aug 2025, Stable Nov 2025)
 
 Key features for Covenant:
-- **`future<T>` type** — Enables `std.concurrent.parallel` and `race`
+- **`future<T>` type** — Enables built-in `parallel` and `race` steps
 - **`stream<T>` type** — Efficient streaming for query results
 - **Subtask model** — Branch isolation maps directly
 - **No function coloring** — Async is transparent at the ABI level
@@ -661,4 +661,3 @@ Stable standard for the next decade. Covenant should align with 1.0 when finaliz
 - [DESIGN.md](DESIGN.md) — Language design philosophy
 - [RUNTIME_IMPORTS.md](RUNTIME_IMPORTS.md) — JavaScript binding model
 - [COMPILER.md](COMPILER.md) — Compilation phases
-- [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) — Custom kind definitions

@@ -71,7 +71,6 @@ end
 - `extern` — External tool binding
 - `test` — Test suite
 - `data` — Data/documentation node
-- `effect-kind` — Define new step kinds (advanced)
 
 ## Type System
 
@@ -106,7 +105,6 @@ end
 - `stdio` — Console I/O
 - `random` — Non-deterministic RNG
 - `time` — Clock access
-- `std.concurrent` — Parallel I/O (imports `parallel`, `race` step kinds)
 
 **Declaration:**
 ```
@@ -344,20 +342,13 @@ step id="s19" kind="transaction"
 end
 ```
 
-### Structured Concurrency (Extended Kinds)
+### Structured Concurrency
 
-To use parallel/race, first declare `effect std.concurrent`:
-
-```
-effects
-  effect std.concurrent
-  effect network
-end
-```
+`parallel` and `race` are built-in step kinds (no effect import needed).
 
 **Parallel — execute branches concurrently, wait for all:**
 ```
-step id="s1" kind="std.concurrent.parallel"
+step id="s1" kind="parallel"
   branch id="b1"
     step id="b1.1" kind="call" fn="http.get" arg name="url" lit="https://api/users" as="users" end
   end
@@ -370,7 +361,7 @@ end
 
 **Race — execute branches, return first to complete:**
 ```
-step id="s2" kind="std.concurrent.race"
+step id="s2" kind="race"
   branch id="b1"
     step id="b1.1" kind="call" fn="cache.get" arg name="key" from="id" as="cached" end
   end
@@ -642,15 +633,12 @@ Before returning generated code, verify:
 - [ ] Return types match function signature
 - [ ] SQL dialect queries have `returns` annotation
 - [ ] CRUD operations (insert/update/delete) only target Covenant types
-- [ ] Extended step kinds (e.g., `std.concurrent.parallel`) have required effect declared
+- [ ] Parallel/race steps have at least one branch
 
 ## Grammar Quick Reference
 
 **Keywords (~60 total):**
-snippet, end, effects, requires, types, tools, signature, body, tests, metadata, fn, struct, enum, module, database, extern, test, data, effect-kind, effect, req, priority, text, step, kind, as, op, input, var, lit, from, of, into, set, param, returns, union, collection, type, optional, add, sub, mul, div, mod, equals, not_equals, less, greater, and, or, not, if, then, else, match, case, for, in, return, bind, mut, query, target, select, all, from, join, where, order, by, limit, insert, update, delete, transaction, handle, variant, field, wildcard, binding, literal, true, false, none, branch, on_error, on_timeout, timeout, construct
-
-**Extended step kinds (require `effect std.concurrent`):**
-`std.concurrent.parallel`, `std.concurrent.race`
+snippet, end, effects, requires, types, tools, signature, body, tests, metadata, fn, struct, enum, module, database, extern, test, data, effect, req, priority, text, step, kind, as, op, input, var, lit, from, of, into, set, param, returns, union, collection, type, optional, add, sub, mul, div, mod, equals, not_equals, less, greater, and, or, not, if, then, else, match, case, for, in, return, bind, mut, query, target, select, all, from, join, where, order, by, limit, insert, update, delete, transaction, handle, variant, field, wildcard, binding, literal, true, false, none, parallel, race, branch, on_error, on_timeout, timeout, construct
 
 **No operators. No semicolons. No expression nesting.**
 

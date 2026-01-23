@@ -110,9 +110,12 @@ For functionality that differs by platform, use **separate extern snippet files*
 
 ```
 stdlib/
+  http-deno.cov       # Uses native fetch() API (same as browser)
   http-browser.cov    # Uses fetch() API
   http-node.cov       # Uses undici/node-fetch
+  fs-deno.cov         # Deno filesystem (Deno.readFile, etc.)
   fs-node.cov         # Node filesystem (no browser equivalent)
+  storage-deno.cov    # Deno KV (built-in)
   storage-browser.cov # IndexedDB
   storage-node.cov    # SQLite or filesystem
 ```
@@ -169,9 +172,39 @@ end
 end
 ```
 
+**http-deno.cov:**
+```covenant
+snippet id="http.get" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  contract="@deno/fetch.get"     // Native Deno fetch() - no dependencies
+  platform="deno"
+end
+
+end
+```
+
 ### Compilation Selects the Right Bindings
 
 ```bash
+# Compiles with Deno extern snippets (default)
+covenant compile app.cov
+covenant compile --target=deno app.cov
+
 # Compiles with browser extern snippets
 covenant compile --target=browser app.cov
 
@@ -215,6 +248,29 @@ export async function instantiate() {
   return wasm.instance.exports;
 }
 ```
+
+### For the Deno Target (Default)
+
+**runtime.ts** (generated):
+```typescript
+// No npm imports needed - Deno has native fetch()
+
+const imports = {
+  "http.get": async (urlPtr: number, urlLen: number) => {
+    const url = readString(memory, urlPtr, urlLen);
+    const response = await fetch(url);  // Native Deno fetch
+    return writeResponse(memory, response);
+  }
+};
+
+export async function instantiate() {
+  const wasmBytes = await Deno.readFile('app.wasm');
+  const wasm = await WebAssembly.instantiate(wasmBytes, { env: imports });
+  return wasm.instance.exports;
+}
+```
+
+**Key advantage:** No npm dependencies, TypeScript runs directly, permissions enforced by Deno runtime.
 
 ### For a Node Target
 
@@ -359,6 +415,33 @@ end
 
 ### Platform Implementations
 
+**storage-deno.cov:**
+```covenant
+snippet id="storage.get" kind="extern"
+
+effects
+  effect storage
+end
+
+signature
+  fn name="get"
+    param name="key" type="String"
+    returns union
+      type="Bytes" optional
+      type="StorageError"
+    end
+  end
+end
+
+metadata
+  contract="@deno/kv.get"
+  platform="deno"
+  // Implementation uses Deno.openKv() - built-in, no dependencies
+end
+
+end
+```
+
 **storage-browser.cov:**
 ```covenant
 snippet id="storage.get" kind="extern"
@@ -468,15 +551,14 @@ const imports = {
 │         (defines signature, effects, types)                  │
 └─────────────────────────────────────────────────────────────┘
                             │
-              ┌─────────────┴─────────────┐
-              ▼                           ▼
-┌───────────────────────┐   ┌───────────────────────┐
-│   storage-browser.cov │   │   storage-node.cov    │
-│                       │   │                       │
-│ IndexedDB             │   │ fs module             │
-│ localStorage          │   │ SQLite                │
-│ REST API backend      │   │ LevelDB               │
-└───────────────────────┘   └───────────────────────┘
+     ┌──────────────┼──────────────┐
+     ▼              ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│storage-deno  │ │storage-browser│ │storage-node  │
+│              │ │              │ │              │
+│ Deno KV      │ │ IndexedDB    │ │ fs module    │
+│ (built-in)   │ │ localStorage │ │ SQLite       │
+└──────────────┘ └──────────────┘ └──────────────┘
 ```
 
 ### Benefits
@@ -495,22 +577,27 @@ In addition to JavaScript targets, Covenant supports **WASI 0.2 Component Model*
 ### Compilation
 
 ```bash
-# WASI 0.2 Component Model
-covenant compile --target=wasi app.cov
+# Deno target (default)
+covenant compile app.cov
+covenant compile --target=deno app.cov
 
-# JavaScript targets (existing)
+# Other JS targets
 covenant compile --target=browser app.cov
 covenant compile --target=node app.cov
+
+# WASI 0.2 Component Model
+covenant compile --target=wasi app.cov
 ```
 
 ### How WASI Differs from JS Targets
 
-| Aspect | `--target=browser/node` | `--target=wasi` |
-|--------|-------------------------|-----------------|
-| Output | `.wasm` + `runtime.js` | `.wasm` component only |
-| Host | Browser or Node.js | Any WASI 0.2 runtime |
-| Bindings | Generated JS glue | WIT interface imports |
-| Extern resolution | npm packages | Host-provided interfaces |
+| Aspect | `--target=deno` | `--target=browser/node` | `--target=wasi` |
+|--------|-----------------|-------------------------|-----------------|
+| Output | `.wasm` + `runtime.ts` | `.wasm` + `runtime.js` | `.wasm` component only |
+| Host | Deno runtime | Browser or Node.js | Any WASI 0.2 runtime |
+| Bindings | Native APIs + Deno KV | Generated JS glue | WIT interface imports |
+| Extern resolution | Built-in APIs | npm packages | Host-provided interfaces |
+| Permissions | `--allow-*` flags | Unrestricted | Host-controlled |
 
 ### Extern Snippets with WASI
 
@@ -534,7 +621,11 @@ signature
 end
 
 metadata
-  // JS targets
+  // Deno target (default) - native fetch
+  contract="@deno/fetch.get"
+  platform="deno"
+
+  // Node.js target - npm package
   contract="undici.request@6"
   platform="node"
 
@@ -563,10 +654,12 @@ See [WASI_INTEGRATION.md](WASI_INTEGRATION.md) for full details on WIT definitio
 
 ## Key Points
 
-1. **Contracts reference real packages** — `contract="axios.get@1"` finds axios in node_modules
-2. **Compile-time resolution** — Bindings are resolved and validated before WASM generation
-3. **Separate files per platform** — `http-browser.cov` vs `http-node.cov`
-4. **Incompatible usage = compile error** — Can't use `fs.readFile` when targeting browser
-5. **Generated glue code** — Compiler produces `runtime.js` with platform-appropriate bindings
-6. **Cross-platform abstractions** — Higher-level interfaces (like `storage`) can have different implementations per platform while keeping application code portable
-7. **WASI target** — Use `--target=wasi` for portable Component Model output that runs on any WASI 0.2 runtime
+1. **Deno is the default target** — `covenant compile app.cov` targets Deno; use `--target=node` for Node.js
+2. **Contracts reference real packages or native APIs** — `contract="@deno/fetch.get"` uses built-in Deno fetch; `contract="undici.request@6"` finds undici in node_modules
+3. **Compile-time resolution** — Bindings are resolved and validated before WASM generation
+4. **Separate files per platform** — `http-deno.cov` vs `http-node.cov` vs `http-browser.cov`
+5. **Incompatible usage = compile error** — Can't use `fs.readFile` when targeting browser
+6. **Generated glue code** — Compiler produces `runtime.ts` (Deno) or `runtime.js` (Node/browser) with platform-appropriate bindings
+7. **Cross-platform abstractions** — Higher-level interfaces (like `storage`) can have different implementations per platform while keeping application code portable
+8. **Effect-to-permission mapping** — On the Deno target, declared effects map to `--allow-*` permission flags for defense-in-depth security
+9. **WASI target** — Use `--target=wasi` for portable Component Model output that runs on any WASI 0.2 runtime

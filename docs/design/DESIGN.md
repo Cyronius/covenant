@@ -945,7 +945,7 @@ Covenant compiles to **WASI 0.2 Component Model** modules for maximum portabilit
 | `effect storage` | `wasi:keyvalue/store` |
 | `effect random` | `wasi:random/random` |
 | `effect database` | `covenant:database/sql` (custom) |
-| `effect std.concurrent` | `future<T>`, subtasks (WASI 0.3, Nov 2025) |
+| `parallel`/`race` steps | `future<T>`, subtasks (WASI 0.3) |
 
 **Custom interfaces:** Database and project query capabilities use Covenant-defined WIT interfaces since WASI equivalents are immature or nonexistent.
 
@@ -1546,7 +1546,7 @@ end
 
 ### 19.1 Design Philosophy
 
-Covenant does **not** support multi-threading, async/await keywords, or shared mutable state. Instead, it provides **structured concurrency** through extensible kinds imported via the effects system.
+Covenant does **not** support multi-threading, async/await keywords, or shared mutable state. Instead, it provides **structured concurrency** through built-in `parallel` and `race` step kinds.
 
 **Why no threads/async:**
 - Threads introduce non-determinism (violates core principle)
@@ -1558,27 +1558,14 @@ Covenant does **not** support multi-threading, async/await keywords, or shared m
 - Declarative — one pattern to learn
 - Deterministic — results always in declaration order
 - Scoped — concurrency is contained, not viral
-- Effect-tracked — explicit capability declaration
+- Built-in — no imports needed, closed grammar
 
-### 19.2 The std.concurrent Effect
+### 19.2 Parallel Execution
 
-Import concurrency primitives via the effect system:
-
-```
-effects
-  effect std.concurrent
-  effect network
-end
-```
-
-This makes available:
-- `std.concurrent.parallel` — execute branches concurrently, wait for all
-- `std.concurrent.race` — execute branches concurrently, return first to complete
-
-### 19.3 Parallel Execution
+`parallel` is a built-in step kind. No effect import required:
 
 ```
-step id="s1" kind="std.concurrent.parallel"
+step id="s1" kind="parallel"
   branch id="b1"
     step id="b1.1" kind="call"
       fn="http.get"
@@ -1595,7 +1582,7 @@ step id="s1" kind="std.concurrent.parallel"
     end
   end
 
-  as="results"  // Struct with users, products fields
+  as="results"
 end
 ```
 
@@ -1605,11 +1592,11 @@ end
 - Results collected in declaration order (deterministic)
 - Branches are isolated — no shared mutable state
 
-### 19.4 Error Handling
+### 19.3 Error Handling
 
 ```
-step id="s1" kind="std.concurrent.parallel"
-  on_error="fail_fast"  // default
+step id="s1" kind="parallel"
+  on_error="fail_fast"
   ...
 end
 ```
@@ -1620,22 +1607,22 @@ end
 | `collect_all` | Wait for all branches, collect errors into result |
 | `ignore_errors` | Replace failed branches with `none` |
 
-### 19.5 Timeouts
+### 19.4 Timeouts
 
 ```
-step id="s1" kind="std.concurrent.parallel"
+step id="s1" kind="parallel"
   timeout=5s
   on_timeout="cancel"
   ...
 end
 ```
 
-### 19.6 Race Pattern
+### 19.5 Race Pattern
 
-Return the first branch to complete:
+`race` is a built-in step kind. Returns the first branch to complete:
 
 ```
-step id="s1" kind="std.concurrent.race"
+step id="s1" kind="race"
   branch id="b1"
     step id="b1.1" kind="call"
       fn="cache.get"
@@ -1656,71 +1643,14 @@ step id="s1" kind="std.concurrent.race"
 end
 ```
 
-### 19.7 What's NOT Supported
+### 19.6 What's NOT Supported
 
 - **Fire-and-forget** — All concurrent work is scoped; you always wait for results
 - **Inter-branch communication** — Branches cannot share state or signal each other
 - **Unbounded spawning** — No "spawn and forget" pattern
 - **Callbacks** — No callback-based async APIs
 
-See [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) for how `std.concurrent` is defined as an effect-kind.
-
 ---
-
-## 20. Extensible Kinds
-
-### 20.1 Core Concept
-
-The `kind` attribute in snippets and steps is **extensible**. While core kinds (`fn`, `data`, `extern`) are built-in, additional kinds can be imported via the effects system.
-
-### 20.2 Importing Kinds
-
-```
-effects
-  effect std.concurrent  // makes parallel, race kinds available
-end
-
-body
-  step id="s1" kind="std.concurrent.parallel"
-    ...
-  end
-end
-```
-
-### 20.3 Namespacing
-
-Kinds are fully qualified by their effect: `effect.kindname`
-
-- `std.concurrent.parallel` — standard library
-- `std.testing.mock` — standard library
-- `acme.workflow.approval` — organization-specific
-
-### 20.4 Defining Custom Kinds
-
-Use `kind="effect-kind"` to define new kinds:
-
-```
-snippet id="myorg.custom" kind="effect-kind"
-
-kinds
-  kind name="my_construct"
-    structure
-      section name="item" multiple=true required=true
-        contains kind="step"
-      end
-    end
-    compile_to="myorg_runtime"
-  end
-end
-
-effects_required
-  effect myorg.runtime
-end
-
-end
-```
-
-See [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) for full specification.
 
 ---
 
@@ -1770,6 +1700,5 @@ These are display transformations, not source formats. The IR remains canonical.
 - [COMPILER.md](COMPILER.md) — Detailed compilation phase specifications
 - [QUERY_SEMANTICS.md](QUERY_SEMANTICS.md) — Formal operational semantics for queries
 - [STORAGE.md](STORAGE.md) — Storage provider interface specification
-- [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) — Pluggable kind system specification
 - [prior-art.md](prior-art.md) — Lessons from Austral, Koka, and LLM-native design
 - [examples/](examples/) — Example programs in IR syntax

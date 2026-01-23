@@ -51,8 +51,8 @@ enum Commands {
         /// Output file
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Target platform (browser, node, wasi). Defaults to node.
-        #[arg(long, default_value = "node")]
+        /// Target platform (deno, node, browser, wasi). Defaults to deno.
+        #[arg(long, default_value = "deno")]
         target: String,
         /// Optimization level (0=none, 1=basic, 2=standard, 3=aggressive)
         #[arg(long, default_value = "0")]
@@ -278,9 +278,9 @@ fn cmd_check(files: &[PathBuf], validate_requirements: bool) {
 
 fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str, opt_level: u8) {
     // Validate target platform
-    let valid_targets = ["browser", "node", "wasi"];
+    let valid_targets = ["deno", "node", "browser", "wasi"];
     if !valid_targets.contains(&target) {
-        eprintln!("Invalid target '{}'. Valid targets: browser, node, wasi", target);
+        eprintln!("Invalid target '{}'. Valid targets: deno, node, browser, wasi", target);
         std::process::exit(1);
     }
 
@@ -951,26 +951,43 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()));
 
-    let runner_paths = [
+    // Try Deno runner first, fall back to Node.js
+    let deno_runner_paths = [
+        exe_dir.as_ref().map(|d| d.join("../../host/run.deno.ts")).unwrap_or_default(),
+        PathBuf::from("host/run.deno.ts"),
+        PathBuf::from("../host/run.deno.ts"),
+    ];
+
+    let node_runner_paths = [
         exe_dir.as_ref().map(|d| d.join("../../host/run.mjs")).unwrap_or_default(),
         PathBuf::from("host/run.mjs"),
         PathBuf::from("../host/run.mjs"),
     ];
 
-    let runner = runner_paths.iter()
-        .find(|p| p.exists())
-        .cloned()
-        .unwrap_or_else(|| {
-            eprintln!("Error: Could not find host/run.mjs");
-            eprintln!("Make sure you're running from the covenant project directory");
-            std::process::exit(1);
-        });
+    let (runtime, runner) = if let Some(r) = deno_runner_paths.iter().find(|p| p.exists()).cloned() {
+        ("deno", r)
+    } else if let Some(r) = node_runner_paths.iter().find(|p| p.exists()).cloned() {
+        ("node", r)
+    } else {
+        eprintln!("Error: Could not find host/run.deno.ts or host/run.mjs");
+        eprintln!("Make sure you're running from the covenant project directory");
+        std::process::exit(1);
+    };
 
-    // Run with Node.js
-    let status = Command::new("node")
-        .arg(&runner)
-        .arg(&temp_wasm)
-        .status();
+    // Run with detected runtime
+    let status = if runtime == "deno" {
+        Command::new("deno")
+            .arg("run")
+            .arg("--allow-read")
+            .arg(&runner)
+            .arg(&temp_wasm)
+            .status()
+    } else {
+        Command::new("node")
+            .arg(&runner)
+            .arg(&temp_wasm)
+            .status()
+    };
 
     // Clean up temp file
     let _ = fs::remove_file(&temp_wasm);

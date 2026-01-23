@@ -549,100 +549,33 @@ for symbol_id, symbol in symbol_table.items():
                       f"Pure function {symbol_id} calls effectful {callee_id}")
 ```
 
-**Step 5: Load and Validate Extended Kinds**
+**Step 5: Validate Concurrency Steps**
 ```python
-# Extensible kinds are defined in effect-kind snippets
-# They must be loaded before validating kind usage
-
-# Step 5a: Load kind definitions from effect-kind snippets
-kind_registry = {}  # Maps "effect.kindname" -> kind_definition
+# parallel and race are built-in step kinds with fixed structure
+# Validate their branch sub-structure and attributes
 
 for symbol_id, symbol in symbol_table.items():
     snippet = ast.snippets[symbol_id]
-
-    if snippet.kind == "effect-kind":
-        effect_name = snippet.id  # e.g., "std.concurrent"
-
-        for kind_def in snippet.sections.kinds:
-            full_kind_name = f"{effect_name}.{kind_def.name}"  # e.g., "std.concurrent.parallel"
-            kind_registry[full_kind_name] = {
-                "name": kind_def.name,
-                "effect": effect_name,
-                "structure": kind_def.structure,
-                "semantics": kind_def.semantics,
-                "compile_to": kind_def.compile_to
-            }
-
-# Step 5b: Validate extended kind usage
-CORE_STEP_KINDS = {
-    "compute", "call", "query", "bind", "return",
-    "if", "match", "for", "insert", "update", "delete",
-    "transaction", "update_snippet", "update_all",
-    "traverse", "construct"
-}
-
-for symbol_id, symbol in symbol_table.items():
-    snippet = ast.snippets[symbol_id]
-    declared_effects = set(symbol.effects)
 
     for step in extract_all_steps(snippet.sections.body):
-        step_kind = step.kind
+        if step.kind == "parallel":
+            # Must have at least one branch
+            if len(step.branches) == 0:
+                error(E_PARSE_010, f"parallel step requires at least one branch")
+            # Validate on_error attribute if present
+            if step.on_error and step.on_error not in {"fail_fast", "collect_all", "ignore_errors"}:
+                error(E_PARSE_011, f"Invalid on_error value: {step.on_error}")
+            # Recursively check branch steps
+            for branch in step.branches:
+                validate_steps(branch.steps, symbol_table)
 
-        # Skip core kinds
-        if step_kind in CORE_STEP_KINDS:
-            continue
-
-        # Extended kind - must be in registry
-        if step_kind not in kind_registry:
-            error(E_KIND_001, f"Unknown kind '{step_kind}'")
-            continue
-
-        # Extended kind - effect must be declared
-        kind_def = kind_registry[step_kind]
-        required_effect = kind_def["effect"]
-
-        if required_effect not in declared_effects:
-            error(E_KIND_002,
-                  f"Kind '{step_kind}' requires 'effect {required_effect}'")
-
-        # Validate step body against kind structure
-        validate_kind_structure(step, kind_def["structure"])
-```
-
-**Step 5c: Validate Kind Structure**
-```python
-def validate_kind_structure(step, structure):
-    """Validate step body matches kind definition structure."""
-
-    for section_def in structure.sections:
-        section_name = section_def.name
-        found_sections = get_sections_by_name(step, section_name)
-
-        # Check required
-        if section_def.required and len(found_sections) == 0:
-            error(E_KIND_004,
-                  f"Kind requires section '{section_name}'")
-
-        # Check multiple
-        if not section_def.multiple and len(found_sections) > 1:
-            error(E_KIND_003,
-                  f"Kind only allows one '{section_name}' section")
-
-    for field_def in structure.fields:
-        field_name = field_def.name
-        field_value = get_field_value(step, field_name)
-
-        # Check required
-        if field_def.required and field_value is None:
-            if field_def.default is None:
-                error(E_KIND_004,
-                      f"Kind requires field '{field_name}'")
-
-        # Check allowed values
-        if field_value is not None and field_def.values:
-            if field_value not in field_def.values:
-                error(E_KIND_005,
-                      f"Invalid value '{field_value}' for field '{field_name}'")
+        elif step.kind == "race":
+            # Must have at least two branches (race with one is pointless)
+            if len(step.branches) < 2:
+                error(E_PARSE_010, f"race step requires at least two branches")
+            # Recursively check branch steps
+            for branch in step.branches:
+                validate_steps(branch.steps, symbol_table)
 ```
 
 ### Error Handling
@@ -1259,7 +1192,7 @@ world app {
 | `effect storage` | `wasi:keyvalue/store` |
 | `effect random` | `wasi:random/random` |
 | `effect database` | `covenant:database/sql` |
-| `effect std.concurrent` | Error (requires WASI 0.3) |
+| `parallel`/`race` steps | Error (requires WASI 0.3) |
 
 See [WASI_INTEGRATION.md](WASI_INTEGRATION.md) for custom WIT definitions.
 
@@ -1330,7 +1263,7 @@ export async function instantiate() {
 | `effect database` | Import `covenant:database/sql` | Import from `runtime.js` |
 | `effect network` | Import `wasi:http/outgoing-handler` | Import from `runtime.js` |
 | `effect filesystem` | Import `wasi:filesystem/types` | Import from `runtime.js` |
-| `effect std.concurrent` | **Error** (WASI 0.3 required) | Promise-based in `runtime.js` |
+| `parallel`/`race` steps | **Error** (WASI 0.3 required) | Promise-based in `runtime.js` |
 
 ### 7.4 SQL Code Generation
 
