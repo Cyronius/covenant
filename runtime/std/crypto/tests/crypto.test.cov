@@ -205,9 +205,9 @@ tests
       as="bytes"
     end
 
-    step id="s2" kind="compute"
-      op=byte_len
-      input var="bytes"
+    step id="s2" kind="call"
+      fn="bytes.len"
+      arg name="bytes" from="bytes"
       as="len"
     end
 
@@ -263,9 +263,9 @@ tests
       as="bytes"
     end
 
-    step id="s2" kind="compute"
-      op=byte_len
-      input var="bytes"
+    step id="s2" kind="call"
+      fn="bytes.len"
+      arg name="bytes" from="bytes"
       as="len"
     end
 

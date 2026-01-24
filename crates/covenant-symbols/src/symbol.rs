@@ -49,6 +49,8 @@ pub struct RelationRef {
     pub target: String,
     /// Relation type (e.g., "contains", "describes")
     pub relation_type: String,
+    /// Direction: To (outgoing) or From (incoming)
+    pub direction: covenant_ast::RelationKind,
 }
 
 /// Information about a symbol extracted from the AST

@@ -19,9 +19,9 @@ end
 
 body
   // upper
-  step id="s1" kind="compute"
-    op=upper
-    input lit="hello world"
+  step id="s1" kind="call"
+    fn="text.upper"
+    arg name="s" lit="hello world"
     as="upper_result"
   end
   step id="s1p" kind="call"
@@ -31,9 +31,9 @@ body
   end
 
   // lower
-  step id="s2" kind="compute"
-    op=lower
-    input lit="HELLO WORLD"
+  step id="s2" kind="call"
+    fn="text.lower"
+    arg name="s" lit="HELLO WORLD"
     as="lower_result"
   end
   step id="s2p" kind="call"
@@ -43,10 +43,10 @@ body
   end
 
   // concat
-  step id="s3" kind="compute"
-    op=concat
-    input lit="foo"
-    input lit="bar"
+  step id="s3" kind="call"
+    fn="text.concat"
+    arg name="a" lit="foo"
+    arg name="b" lit="bar"
     as="concat_result"
   end
   step id="s3p" kind="call"
@@ -56,9 +56,9 @@ body
   end
 
   // trim
-  step id="s4" kind="compute"
-    op=trim
-    input lit="  padded  "
+  step id="s4" kind="call"
+    fn="text.trim"
+    arg name="s" lit="  padded  "
     as="trim_result"
   end
   step id="s4p" kind="call"
@@ -68,27 +68,27 @@ body
   end
 
   // contains
-  step id="s5" kind="compute"
-    op=contains
-    input lit="hello world"
-    input lit="world"
+  step id="s5" kind="call"
+    fn="text.contains"
+    arg name="haystack" lit="hello world"
+    arg name="needle" lit="world"
     as="has_world"
   end
 
   // starts_with
-  step id="s6" kind="compute"
-    op=starts_with
-    input lit="hello world"
-    input lit="hello"
+  step id="s6" kind="call"
+    fn="text.starts_with"
+    arg name="s" lit="hello world"
+    arg name="prefix" lit="hello"
     as="starts_hello"
   end
 
   // replace
-  step id="s7" kind="compute"
-    op=replace
-    input lit="hello world"
-    input lit="world"
-    input lit="covenant"
+  step id="s7" kind="call"
+    fn="text.replace"
+    arg name="s" lit="hello world"
+    arg name="from" lit="world"
+    arg name="to" lit="covenant"
     as="replaced"
   end
   step id="s7p" kind="call"
@@ -98,10 +98,10 @@ body
   end
 
   // repeat
-  step id="s8" kind="compute"
-    op=repeat
-    input lit="ab"
-    input lit=3
+  step id="s8" kind="call"
+    fn="text.repeat"
+    arg name="s" lit="ab"
+    arg name="count" lit=3
     as="repeated"
   end
   step id="s8p" kind="call"

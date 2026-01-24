@@ -1,0 +1,134 @@
+// std.console - Console Output
+//
+// Functions for writing to stdout and stderr.
+// All operations require the `console` effect.
+//
+// Platform backends:
+// - Deno: console.log, console.error, etc.
+// - Node.js: console.log, console.error, etc.
+// - Browser: console.log, console.error, etc.
+// - WASI: wasi:io/stdout, wasi:io/stderr
+
+// ============================================================
+// Console Functions
+// ============================================================
+
+snippet id="console.println" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="println"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print a message to stdout followed by a newline"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="console.print" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="print"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print a message to stdout without a trailing newline"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="console.error" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="error"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print a message to stderr"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="console.info" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="info"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print an informational message to stdout"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="console.debug" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="debug"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print a debug message to stdout"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="console.warn" kind="extern-abstract"
+
+effects
+  effect console
+end
+
+signature
+  fn name="warn"
+    param name="message" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Print a warning message to stderr"
+  cost_hint=cheap
+end
+
+end

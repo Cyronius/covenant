@@ -25,12 +25,22 @@ end
 
 body
   // Build namespaced key: "prefs:{user_id}:{key}"
-  step id="s1" kind="compute"
-    op=concat
-    input lit="prefs:"
-    input var="user_id"
-    input lit=":"
-    input var="key"
+  step id="s1a" kind="call"
+    fn="text.concat"
+    arg name="a" lit="prefs:"
+    arg name="b" from="user_id"
+    as="key_part1"
+  end
+  step id="s1b" kind="call"
+    fn="text.concat"
+    arg name="a" from="key_part1"
+    arg name="b" lit=":"
+    as="key_part2"
+  end
+  step id="s1" kind="call"
+    fn="text.concat"
+    arg name="a" from="key_part2"
+    arg name="b" from="key"
     as="storage_key"
   end
 
@@ -61,12 +71,22 @@ signature
 end
 
 body
-  step id="s1" kind="compute"
-    op=concat
-    input lit="prefs:"
-    input var="user_id"
-    input lit=":"
-    input var="key"
+  step id="s1a" kind="call"
+    fn="text.concat"
+    arg name="a" lit="prefs:"
+    arg name="b" from="user_id"
+    as="key_part1"
+  end
+  step id="s1b" kind="call"
+    fn="text.concat"
+    arg name="a" from="key_part1"
+    arg name="b" lit=":"
+    as="key_part2"
+  end
+  step id="s1" kind="call"
+    fn="text.concat"
+    arg name="a" from="key_part2"
+    arg name="b" from="key"
     as="storage_key"
   end
 
@@ -120,11 +140,16 @@ signature
 end
 
 body
-  step id="s1" kind="compute"
-    op=concat
-    input lit="prefs:"
-    input var="user_id"
-    input lit=":"
+  step id="s1a" kind="call"
+    fn="text.concat"
+    arg name="a" lit="prefs:"
+    arg name="b" from="user_id"
+    as="prefix_part1"
+  end
+  step id="s1" kind="call"
+    fn="text.concat"
+    arg name="a" from="prefix_part1"
+    arg name="b" lit=":"
     as="prefix"
   end
 
@@ -214,10 +239,10 @@ body
     as="result"
   end
 
-  step id="s2" kind="compute"
-    op=map_get
-    input var="result"
-    input lit="documents"
+  step id="s2" kind="call"
+    fn="map.get"
+    arg name="map" from="result"
+    arg name="key" lit="documents"
     as="docs"
   end
 
@@ -301,9 +326,9 @@ body
     as="pending_orders"
   end
 
-  step id="s2" kind="compute"
-    op=list_len
-    input var="pending_orders"
+  step id="s2" kind="call"
+    fn="list.len"
+    arg name="list" from="pending_orders"
     as="count"
   end
 
@@ -391,10 +416,10 @@ end
 
 body
   // Build cache key
-  step id="s1" kind="compute"
-    op=concat
-    input lit="cache:user:"
-    input var="user_id"
+  step id="s1" kind="call"
+    fn="text.concat"
+    arg name="a" lit="cache:user:"
+    arg name="b" from="user_id"
     as="cache_key"
   end
 
@@ -437,10 +462,10 @@ body
 
         case pattern="Some(d)"
           // Cache for future use
-          step id="s3d1" kind="compute"
-            op=map_get
-            input var="d"
-            input lit="data"
+          step id="s3d1" kind="call"
+            fn="map.get"
+            arg name="map" from="d"
+            arg name="key" lit="data"
             as="user_data"
           end
           step id="s3d2" kind="compute"

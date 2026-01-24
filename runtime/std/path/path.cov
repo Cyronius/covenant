@@ -1,0 +1,97 @@
+// std.path - Path Manipulation
+//
+// Pure functions for manipulating file system paths.
+// No effects required — these operate on strings only.
+//
+// Platform backends:
+// - Deno: Deno std/path module
+// - Node.js: node:path
+// - Browser: string manipulation
+// - WASI: string manipulation
+//
+// All functions handle both Unix (/) and Windows (\) separators.
+
+// ============================================================
+// Path Functions
+// ============================================================
+
+snippet id="path.join" kind="extern-abstract"
+
+signature
+  fn name="join"
+    param name="base" type="String"
+    param name="segment" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Combine two path segments with the platform path separator"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="path.extname" kind="extern-abstract"
+
+signature
+  fn name="extname"
+    param name="path" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Extract file extension including the dot (e.g. '.md')"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="path.basename" kind="extern-abstract"
+
+signature
+  fn name="basename"
+    param name="path" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Extract the filename from a path"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="path.dirname" kind="extern-abstract"
+
+signature
+  fn name="dirname"
+    param name="path" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Extract the directory portion of a path"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="path.is_absolute" kind="extern-abstract"
+
+signature
+  fn name="is_absolute"
+    param name="path" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if a path is absolute"
+  cost_hint=cheap
+end
+
+end

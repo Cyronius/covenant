@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use covenant_ast::{
     Snippet, SnippetKind, Section, SignatureKind, BodySection,
     Step, StepKind, ComputeStep, Operation, Input, InputSource, CallStep,
-    ReturnStep, ReturnValue, IfStep, BindStep, BindSource, MatchStep, MatchPattern,
+    ReturnStep, ReturnValue, IfStep, ForStep, BindStep, BindSource, MatchStep, MatchPattern,
     FunctionSignature, ReturnType, Type, TypeKind, Literal, QueryStep, QueryContent,
     StructSignature, EnumSignature, StructConstruction,
 };
@@ -38,116 +38,35 @@ impl SnippetChecker {
             type_registry: TypeRegistry::new(),
             current_return_type: None,
         };
-        checker.register_builtins();
+        checker.register_stdlib();
         checker
     }
 
-    /// Register built-in runtime functions (console, math, etc.)
-    fn register_builtins(&mut self) {
-        // console.println - prints a string to stdout
-        self.symbols.define(
-            "console.println".to_string(),
-            SymbolKind::Function {
-                params: vec![("message".to_string(), ResolvedType::String)],
-                effects: vec!["console".to_string()],
-            },
-            ResolvedType::None,
-        );
-        self.function_returns.insert("console.println".to_string(), ResolvedType::None);
+    /// Load and register standard library function signatures from embedded .cov files
+    fn register_stdlib(&mut self) {
+        const STDLIB_SOURCES: &[&str] = &[
+            include_str!("../../../runtime/std/console/console.cov"),
+            include_str!("../../../runtime/std/filesystem/fs.cov"),
+            include_str!("../../../runtime/std/path/path.cov"),
+            include_str!("../../../runtime/std/text/regex.cov"),
+            include_str!("../../../runtime/std/text/text.cov"),
+            include_str!("../../../runtime/std/list/list.cov"),
+        ];
 
-        // console.print - prints without newline
-        self.symbols.define(
-            "console.print".to_string(),
-            SymbolKind::Function {
-                params: vec![("message".to_string(), ResolvedType::String)],
-                effects: vec!["console".to_string()],
-            },
-            ResolvedType::None,
-        );
-        self.function_returns.insert("console.print".to_string(), ResolvedType::None);
-
-        // console.error - prints to stderr
-        self.symbols.define(
-            "console.error".to_string(),
-            SymbolKind::Function {
-                params: vec![("message".to_string(), ResolvedType::String)],
-                effects: vec!["console".to_string()],
-            },
-            ResolvedType::None,
-        );
-        self.function_returns.insert("console.error".to_string(), ResolvedType::None);
-
-        // std.text.regex_test - test if regex matches
-        self.symbols.define(
-            "std.text.regex_test".to_string(),
-            SymbolKind::Function {
-                params: vec![
-                    ("pattern".to_string(), ResolvedType::String),
-                    ("input".to_string(), ResolvedType::String),
-                ],
-                effects: vec![],
-            },
-            ResolvedType::Bool,
-        );
-        self.function_returns.insert("std.text.regex_test".to_string(), ResolvedType::Bool);
-
-        // std.text.regex_match - find first match (returns String: JSON-encoded or empty)
-        self.symbols.define(
-            "std.text.regex_match".to_string(),
-            SymbolKind::Function {
-                params: vec![
-                    ("pattern".to_string(), ResolvedType::String),
-                    ("input".to_string(), ResolvedType::String),
-                ],
-                effects: vec![],
-            },
-            ResolvedType::String,
-        );
-        self.function_returns.insert("std.text.regex_match".to_string(), ResolvedType::String);
-
-        // std.text.regex_replace - replace first match
-        self.symbols.define(
-            "std.text.regex_replace".to_string(),
-            SymbolKind::Function {
-                params: vec![
-                    ("pattern".to_string(), ResolvedType::String),
-                    ("input".to_string(), ResolvedType::String),
-                    ("replacement".to_string(), ResolvedType::String),
-                ],
-                effects: vec![],
-            },
-            ResolvedType::String,
-        );
-        self.function_returns.insert("std.text.regex_replace".to_string(), ResolvedType::String);
-
-        // std.text.regex_replace_all - replace all matches
-        self.symbols.define(
-            "std.text.regex_replace_all".to_string(),
-            SymbolKind::Function {
-                params: vec![
-                    ("pattern".to_string(), ResolvedType::String),
-                    ("input".to_string(), ResolvedType::String),
-                    ("replacement".to_string(), ResolvedType::String),
-                ],
-                effects: vec![],
-            },
-            ResolvedType::String,
-        );
-        self.function_returns.insert("std.text.regex_replace_all".to_string(), ResolvedType::String);
-
-        // std.text.regex_split - split by regex pattern
-        self.symbols.define(
-            "std.text.regex_split".to_string(),
-            SymbolKind::Function {
-                params: vec![
-                    ("pattern".to_string(), ResolvedType::String),
-                    ("input".to_string(), ResolvedType::String),
-                ],
-                effects: vec![],
-            },
-            ResolvedType::String, // Returns serialized array as fat pointer
-        );
-        self.function_returns.insert("std.text.regex_split".to_string(), ResolvedType::String);
+        for source in STDLIB_SOURCES {
+            if let Ok(covenant_ast::Program::Snippets { snippets, .. }) = covenant_parser::parse(source) {
+                for snippet in &snippets {
+                    match snippet.kind {
+                        SnippetKind::ExternAbstract | SnippetKind::Function => {
+                            self.register_function_signature(snippet);
+                        }
+                        SnippetKind::Struct => self.register_struct_type(snippet),
+                        SnippetKind::Enum => self.register_enum_type(snippet),
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
     /// Check all snippets and return the result
@@ -155,7 +74,9 @@ impl SnippetChecker {
         // First pass: register all types and function signatures
         for snippet in snippets {
             match snippet.kind {
-                SnippetKind::Function => self.register_function_signature(snippet),
+                SnippetKind::Function | SnippetKind::ExternAbstract => {
+                    self.register_function_signature(snippet);
+                }
                 SnippetKind::Struct => self.register_struct_type(snippet),
                 SnippetKind::Enum => self.register_enum_type(snippet),
                 _ => {}
@@ -289,7 +210,7 @@ impl SnippetChecker {
             StepKind::If(if_step) => self.infer_if_step(if_step),
             StepKind::Bind(bind) => self.infer_bind_step(bind),
             StepKind::Match(match_step) => self.infer_match_step(match_step),
-            StepKind::For(_) => ResolvedType::None, // For loops don't produce a value
+            StepKind::For(for_step) => self.infer_for_step(for_step),
             StepKind::Query(query) => self.infer_query_step(query),
             StepKind::Insert(_) => ResolvedType::Unknown, // TODO: infer inserted type
             StepKind::Update(_) => ResolvedType::Unknown, // TODO: infer update count
@@ -350,28 +271,7 @@ impl SnippetChecker {
             // Negation: same as input type
             Operation::Neg => input_types.first().cloned().unwrap_or(ResolvedType::Int),
 
-            // String operations that return String
-            Operation::Concat | Operation::Upper | Operation::Lower |
-            Operation::Trim | Operation::TrimStart | Operation::TrimEnd |
-            Operation::Replace | Operation::Join | Operation::Repeat |
-            Operation::StrReverse | Operation::PadStart | Operation::PadEnd => ResolvedType::String,
-
-            // String slice returns String
-            Operation::Slice => ResolvedType::String,
-
-            // String operations that return Bool
-            Operation::Contains | Operation::StartsWith | Operation::EndsWith |
-            Operation::IsEmpty => ResolvedType::Bool,
-
-            // String operations that return Int
-            Operation::StrLen | Operation::ByteLen => ResolvedType::Int,
-
-            // String operations that return Optional
-            Operation::IndexOf => ResolvedType::Optional(Box::new(ResolvedType::Int)),
-            Operation::CharAt => ResolvedType::Optional(Box::new(ResolvedType::Char)),
-
-            // Split returns list of strings
-            Operation::Split => ResolvedType::List(Box::new(ResolvedType::String)),
+            // String operations removed — now extern-abstract calls (text.concat, etc.)
 
             // Numeric operations: Abs, Sign preserve type; Min/Max preserve type
             Operation::Abs | Operation::Sign => input_types.first().cloned().unwrap_or(ResolvedType::Int),
@@ -406,40 +306,7 @@ impl SnippetChecker {
                 ResolvedType::Named { name: "ParseError".to_string(), id: covenant_ast::SymbolId(0), args: vec![] }
             ]),
 
-            // List operations that return Int
-            Operation::ListLen => ResolvedType::Int,
-
-            // List operations that return Bool
-            Operation::ListContains | Operation::ListIsEmpty => ResolvedType::Bool,
-
-            // List operations that return Optional element
-            Operation::ListGet | Operation::ListFirst | Operation::ListLast => {
-                match input_types.first() {
-                    Some(ResolvedType::List(inner)) => ResolvedType::Optional(inner.clone()),
-                    _ => ResolvedType::Optional(Box::new(ResolvedType::Unknown))
-                }
-            }
-
-            // List operations that return Optional Int
-            Operation::ListIndexOf => ResolvedType::Optional(Box::new(ResolvedType::Int)),
-
-            // List operations that return new list (same type)
-            Operation::ListAppend | Operation::ListPrepend | Operation::ListConcat |
-            Operation::ListSlice | Operation::ListReverse | Operation::ListTake |
-            Operation::ListDrop | Operation::ListSort | Operation::ListDedup => {
-                input_types.first().cloned().unwrap_or(ResolvedType::List(Box::new(ResolvedType::Unknown)))
-            }
-
-            // ListFlatten: List<List<T>> -> List<T>
-            Operation::ListFlatten => {
-                match input_types.first() {
-                    Some(ResolvedType::List(inner)) => match inner.as_ref() {
-                        ResolvedType::List(inner_inner) => ResolvedType::List(inner_inner.clone()),
-                        _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
-                    },
-                    _ => ResolvedType::List(Box::new(ResolvedType::Unknown))
-                }
-            }
+            // List operations removed — now extern-abstract calls (list.len, etc.)
 
             // Map operations that return Int
             Operation::MapLen => ResolvedType::Int,
@@ -447,15 +314,7 @@ impl SnippetChecker {
             // Map operations that return Bool
             Operation::MapHas | Operation::MapIsEmpty => ResolvedType::Bool,
 
-            // Map operations that return Optional value
-            Operation::MapGet => {
-                match input_types.first() {
-                    Some(ResolvedType::Named { args, .. }) if args.len() >= 2 => {
-                        ResolvedType::Optional(Box::new(args[1].clone()))
-                    }
-                    _ => ResolvedType::Optional(Box::new(ResolvedType::Unknown))
-                }
-            }
+            // MapGet removed — now extern-abstract call (map.get)
 
             // Map operations that return new map
             Operation::MapInsert | Operation::MapRemove | Operation::MapMerge => {
@@ -597,39 +456,101 @@ impl SnippetChecker {
     }
 
     /// Infer type of an if step
+    fn infer_for_step(&mut self, for_step: &ForStep) -> ResolvedType {
+        // Determine element type from the collection being iterated
+        let collection_type = self.locals.get(&for_step.collection).cloned()
+            .unwrap_or(ResolvedType::Unknown);
+        let element_type = match &collection_type {
+            ResolvedType::List(inner) => *inner.clone(),
+            _ => ResolvedType::Unknown,
+        };
+
+        // Register the iteration variable
+        self.locals.insert(for_step.var.clone(), element_type);
+
+        // Clone steps to avoid borrow issues
+        let body_steps = for_step.steps.clone();
+
+        // Type-check body steps and track the last step's type
+        let mut body_type = ResolvedType::None;
+        for step in &body_steps {
+            self.check_step(step);
+            body_type = self.locals.get(&step.output_binding)
+                .cloned()
+                .unwrap_or(ResolvedType::None);
+        }
+
+        // For-loop collects body results into a List
+        if matches!(body_type, ResolvedType::None) {
+            ResolvedType::None
+        } else {
+            ResolvedType::List(Box::new(body_type))
+        }
+    }
+
     fn infer_if_step(&mut self, if_step: &IfStep) -> ResolvedType {
         // Check condition exists and is bool
-        if let Some(cond_type) = self.locals.get(&if_step.condition) {
-            if !matches!(cond_type, ResolvedType::Bool) {
-                self.errors.push(CheckError::TypeMismatch {
-                    expected: "Bool".to_string(),
-                    found: cond_type.display(),
-                });
+        match &if_step.condition {
+            InputSource::Var(name) => {
+                if let Some(cond_type) = self.locals.get(name) {
+                    if !matches!(cond_type, ResolvedType::Bool) {
+                        self.errors.push(CheckError::TypeMismatch {
+                            expected: "Bool".to_string(),
+                            found: cond_type.display(),
+                        });
+                    }
+                } else {
+                    self.errors.push(CheckError::UndefinedSymbol {
+                        name: name.clone(),
+                    });
+                }
             }
-        } else {
-            self.errors.push(CheckError::UndefinedSymbol {
-                name: if_step.condition.clone(),
-            });
+            InputSource::Field { of, .. } => {
+                // Field access on a variable (e.g. "entry.is_directory") — check the base exists
+                if self.locals.get(of).is_none() {
+                    self.errors.push(CheckError::UndefinedSymbol {
+                        name: of.clone(),
+                    });
+                }
+                // Assume field access produces Bool (used as condition)
+            }
+            InputSource::Lit(_) => {
+                // Literal conditions are valid (e.g., lit=true)
+            }
         }
 
         // Clone steps to avoid borrow issues
         let then_steps = if_step.then_steps.clone();
         let else_steps = if_step.else_steps.clone();
 
-        // Check then branch
+        // Check then branch and get last step's type
+        let mut then_type = ResolvedType::None;
         for step in &then_steps {
             self.check_step(step);
+            then_type = self.locals.get(&step.output_binding)
+                .cloned()
+                .unwrap_or(ResolvedType::None);
         }
 
         // Check else branch if present
+        let mut else_type = ResolvedType::None;
         if let Some(else_steps) = &else_steps {
             for step in else_steps {
                 self.check_step(step);
+                else_type = self.locals.get(&step.output_binding)
+                    .cloned()
+                    .unwrap_or(ResolvedType::None);
             }
         }
 
-        // If statements don't produce a value in SSA form
-        ResolvedType::None
+        // Unify branch types if both produce values
+        match (&then_type, &else_type) {
+            (ResolvedType::None, ResolvedType::None) => ResolvedType::None,
+            (t, ResolvedType::None) => t.clone(),
+            (ResolvedType::None, t) => t.clone(),
+            (t, e) if self.types_compatible(t, e) => t.clone(),
+            (t, e) => ResolvedType::Union(vec![t.clone(), e.clone()]),
+        }
     }
 
     /// Infer type of a bind step
@@ -817,6 +738,10 @@ impl SnippetChecker {
             (ResolvedType::Unknown, _) | (_, ResolvedType::Unknown) => true,
             (ResolvedType::Error, _) | (_, ResolvedType::Error) => true,
 
+            // Any type is compatible with everything (used as generic placeholder in std lib)
+            (ResolvedType::Named { name, .. }, _) if name == "Any" => true,
+            (_, ResolvedType::Named { name, .. }) if name == "Any" => true,
+
             // Primitive types
             (ResolvedType::Int, ResolvedType::Int) => true,
             (ResolvedType::Float, ResolvedType::Float) => true,
@@ -890,6 +815,42 @@ impl SnippetChecker {
         }
     }
 
+    /// Resolve a type name string to a ResolvedType (for inline generic syntax)
+    fn resolve_type_name(&self, name: &str) -> ResolvedType {
+        match name {
+            "Int" => ResolvedType::Int,
+            "Float" => ResolvedType::Float,
+            "Bool" => ResolvedType::Bool,
+            "String" => ResolvedType::String,
+            "Char" => ResolvedType::Char,
+            "Bytes" => ResolvedType::Bytes,
+            "DateTime" => ResolvedType::DateTime,
+            _ => {
+                if let Some(bracket_pos) = name.find('<') {
+                    let base_name = &name[..bracket_pos];
+                    let args_str = &name[bracket_pos + 1..name.len() - 1];
+                    let inner_type = self.resolve_type_name(args_str);
+                    match base_name {
+                        "List" => ResolvedType::List(Box::new(inner_type)),
+                        "Optional" => ResolvedType::Optional(Box::new(inner_type)),
+                        "Set" => ResolvedType::Set(Box::new(inner_type)),
+                        _ => ResolvedType::Named {
+                            name: base_name.to_string(),
+                            id: covenant_ast::SymbolId(0),
+                            args: vec![inner_type],
+                        },
+                    }
+                } else {
+                    ResolvedType::Named {
+                        name: name.to_string(),
+                        id: covenant_ast::SymbolId(0),
+                        args: vec![],
+                    }
+                }
+            }
+        }
+    }
+
     /// Resolve an AST Type to a ResolvedType
     fn resolve_type(&self, ty: &Type) -> ResolvedType {
         match &ty.kind {
@@ -903,11 +864,48 @@ impl SnippetChecker {
                     "Char" => ResolvedType::Char,
                     "Bytes" => ResolvedType::Bytes,
                     "DateTime" => ResolvedType::DateTime,
-                    _ => ResolvedType::Named {
-                        name: name.to_string(),
-                        id: covenant_ast::SymbolId(0), // Placeholder
-                        args: path.generics.iter().map(|t| self.resolve_type(t)).collect(),
-                    },
+                    "List" => {
+                        let inner = path.generics.first()
+                            .map(|t| self.resolve_type(t))
+                            .unwrap_or(ResolvedType::Unknown);
+                        ResolvedType::List(Box::new(inner))
+                    }
+                    "Optional" => {
+                        let inner = path.generics.first()
+                            .map(|t| self.resolve_type(t))
+                            .unwrap_or(ResolvedType::Unknown);
+                        ResolvedType::Optional(Box::new(inner))
+                    }
+                    "Set" => {
+                        let inner = path.generics.first()
+                            .map(|t| self.resolve_type(t))
+                            .unwrap_or(ResolvedType::Unknown);
+                        ResolvedType::Set(Box::new(inner))
+                    }
+                    _ => {
+                        // Handle inline generic syntax (e.g. "List<String>" from attribute parsing)
+                        if let Some(bracket_pos) = name.find('<') {
+                            let base_name = &name[..bracket_pos];
+                            let args_str = &name[bracket_pos + 1..name.len() - 1]; // strip < and >
+                            let inner_type = self.resolve_type_name(args_str);
+                            match base_name {
+                                "List" => ResolvedType::List(Box::new(inner_type)),
+                                "Optional" => ResolvedType::Optional(Box::new(inner_type)),
+                                "Set" => ResolvedType::Set(Box::new(inner_type)),
+                                _ => ResolvedType::Named {
+                                    name: base_name.to_string(),
+                                    id: covenant_ast::SymbolId(0),
+                                    args: vec![inner_type],
+                                },
+                            }
+                        } else {
+                            ResolvedType::Named {
+                                name: name.to_string(),
+                                id: covenant_ast::SymbolId(0),
+                                args: path.generics.iter().map(|t| self.resolve_type(t)).collect(),
+                            }
+                        }
+                    }
                 }
             }
             TypeKind::Optional(inner) => {

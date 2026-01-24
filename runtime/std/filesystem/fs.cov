@@ -1,0 +1,231 @@
+// std.filesystem - File System Operations
+//
+// File and directory manipulation functions.
+// All operations require the `filesystem` effect.
+//
+// Platform backends:
+// - Deno: Deno.readTextFile, Deno.writeTextFile, Deno.mkdir, etc.
+// - Node.js: node:fs/promises
+// - WASI: wasi:filesystem
+//
+// Error handling: All fallible operations return union with IoError.
+
+// ============================================================
+// File Read/Write
+// ============================================================
+
+snippet id="fs.read_file" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="read_file"
+    param name="path" type="String"
+    returns union
+      type="String"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Read entire file as UTF-8 text"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="fs.write_file" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="write_file"
+    param name="path" type="String"
+    param name="content" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Write text content to file, creating or overwriting"
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// Directory Operations
+// ============================================================
+
+snippet id="fs.mkdir" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="mkdir"
+    param name="path" type="String"
+    param name="recursive" type="Bool"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Create directory, optionally creating parent directories"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="fs.readDir" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="readDir"
+    param name="path" type="String"
+    returns union
+      type="List<DirEntry>"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="List directory contents as DirEntry objects"
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// File Management
+// ============================================================
+
+snippet id="fs.exists" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="exists"
+    param name="path" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if a file or directory exists at the given path"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="fs.remove" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="remove"
+    param name="path" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Delete a file or directory"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="fs.stat" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="stat"
+    param name="path" type="String"
+    returns union
+      type="FileStat"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Get file or directory metadata (size, type, modified time)"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="fs.copy" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="copy"
+    param name="src" type="String"
+    param name="dst" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Copy a file from src to dst"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="fs.rename" kind="extern-abstract"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="rename"
+    param name="src" type="String"
+    param name="dst" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  description="Rename or move a file from src to dst"
+  cost_hint=moderate
+end
+
+end

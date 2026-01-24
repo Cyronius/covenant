@@ -870,6 +870,15 @@ fn cmd_repl() {
     println!("Goodbye!");
 }
 
+fn command_exists(cmd: &str) -> bool {
+    std::process::Command::new(cmd)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+}
+
 fn cmd_run(file: &PathBuf, opt_level: u8) {
     use std::process::Command;
 
@@ -964,9 +973,20 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
         PathBuf::from("../runtime/host/run.mjs"),
     ];
 
-    let (runtime, runner) = if let Some(r) = deno_runner_paths.iter().find(|p| p.exists()).cloned() {
-        ("deno", r)
-    } else if let Some(r) = node_runner_paths.iter().find(|p| p.exists()).cloned() {
+    let deno_runner = deno_runner_paths.iter().find(|p| p.exists()).cloned();
+    let node_runner = node_runner_paths.iter().find(|p| p.exists()).cloned();
+
+    let (runtime, runner) = if let Some(r) = deno_runner {
+        if command_exists("deno") {
+            ("deno", r)
+        } else if let Some(nr) = node_runner.clone() {
+            ("node", nr)
+        } else {
+            eprintln!("Error: Deno is not installed and run.mjs was not found");
+            eprintln!("Install Deno (https://deno.land) or ensure run.mjs exists");
+            std::process::exit(1);
+        }
+    } else if let Some(r) = node_runner {
         ("node", r)
     } else {
         eprintln!("Error: Could not find runtime/host/run.deno.ts or runtime/host/run.mjs");
@@ -979,6 +999,7 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
         Command::new("deno")
             .arg("run")
             .arg("--allow-read")
+            .arg("--allow-write")
             .arg(&runner)
             .arg(&temp_wasm)
             .status()
@@ -998,8 +1019,9 @@ fn cmd_run(file: &PathBuf, opt_level: u8) {
             std::process::exit(s.code().unwrap_or(1));
         }
         Err(e) => {
-            eprintln!("Error running node: {}", e);
-            eprintln!("Make sure Node.js is installed and in your PATH");
+            eprintln!("Error running {}: {}", runtime, e);
+            eprintln!("Make sure {} is installed and in your PATH",
+                if runtime == "deno" { "Deno" } else { "Node.js" });
             std::process::exit(1);
         }
     }

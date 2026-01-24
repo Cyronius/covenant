@@ -2679,10 +2679,6 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Operation::Not)
             }
-            TokenKind::Contains => {
-                self.advance();
-                Ok(Operation::Contains)
-            }
             TokenKind::Ident => {
                 // Also support identifiers for extended operations
                 let op_name = self.consume_text(TokenKind::Ident)?;
@@ -2698,29 +2694,7 @@ impl<'a> Parser<'a> {
                     "mod" => Ok(Operation::Mod),
                     "neg" => Ok(Operation::Neg),
 
-                    // String operations
-                    "concat" => Ok(Operation::Concat),
-                    "contains" => Ok(Operation::Contains),
-                    "slice" => Ok(Operation::Slice),
-                    "upper" => Ok(Operation::Upper),
-                    "lower" => Ok(Operation::Lower),
-                    "trim" => Ok(Operation::Trim),
-                    "trim_start" => Ok(Operation::TrimStart),
-                    "trim_end" => Ok(Operation::TrimEnd),
-                    "replace" => Ok(Operation::Replace),
-                    "split" => Ok(Operation::Split),
-                    "join" => Ok(Operation::Join),
-                    "repeat" => Ok(Operation::Repeat),
-                    "str_len" => Ok(Operation::StrLen),
-                    "byte_len" => Ok(Operation::ByteLen),
-                    "is_empty" => Ok(Operation::IsEmpty),
-                    "starts_with" => Ok(Operation::StartsWith),
-                    "ends_with" => Ok(Operation::EndsWith),
-                    "index_of" => Ok(Operation::IndexOf),
-                    "char_at" => Ok(Operation::CharAt),
-                    "str_reverse" => Ok(Operation::StrReverse),
-                    "pad_start" => Ok(Operation::PadStart),
-                    "pad_end" => Ok(Operation::PadEnd),
+                    // String operations — removed (now extern-abstract calls)
 
                     // Numeric operations
                     "abs" => Ok(Operation::Abs),
@@ -2751,28 +2725,10 @@ impl<'a> Parser<'a> {
                     "parse_int" => Ok(Operation::ParseInt),
                     "parse_float" => Ok(Operation::ParseFloat),
 
-                    // List operations
-                    "list_len" => Ok(Operation::ListLen),
-                    "list_get" => Ok(Operation::ListGet),
-                    "list_first" => Ok(Operation::ListFirst),
-                    "list_last" => Ok(Operation::ListLast),
-                    "list_append" => Ok(Operation::ListAppend),
-                    "list_prepend" => Ok(Operation::ListPrepend),
-                    "list_concat" => Ok(Operation::ListConcat),
-                    "list_slice" => Ok(Operation::ListSlice),
-                    "list_reverse" => Ok(Operation::ListReverse),
-                    "list_take" => Ok(Operation::ListTake),
-                    "list_drop" => Ok(Operation::ListDrop),
-                    "list_contains" => Ok(Operation::ListContains),
-                    "list_index_of" => Ok(Operation::ListIndexOf),
-                    "list_is_empty" => Ok(Operation::ListIsEmpty),
-                    "list_sort" => Ok(Operation::ListSort),
-                    "list_dedup" => Ok(Operation::ListDedup),
-                    "list_flatten" => Ok(Operation::ListFlatten),
+                    // List operations — removed (now extern-abstract calls)
 
-                    // Map operations
+                    // Map operations (map_get removed — now extern-abstract call)
                     "map_len" => Ok(Operation::MapLen),
-                    "map_get" => Ok(Operation::MapGet),
                     "map_has" => Ok(Operation::MapHas),
                     "map_insert" => Ok(Operation::MapInsert),
                     "map_remove" => Ok(Operation::MapRemove),
@@ -2836,6 +2792,26 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn string_to_input_source(s: String) -> InputSource {
+        if let Some(dot_pos) = s.find('.') {
+            let of = s[..dot_pos].to_string();
+            let field = s[dot_pos + 1..].to_string();
+            InputSource::Field { of, field }
+        } else {
+            InputSource::Var(s)
+        }
+    }
+
+    fn string_to_bind_source(s: String) -> BindSource {
+        if let Some(dot_pos) = s.find('.') {
+            let of = s[..dot_pos].to_string();
+            let field = s[dot_pos + 1..].to_string();
+            BindSource::Field { of, field }
+        } else {
+            BindSource::Var(s)
+        }
+    }
+
     fn parse_input(&mut self) -> Result<Input, ParseError> {
         let start = self.span();
         self.consume(TokenKind::Input)?;
@@ -2844,7 +2820,7 @@ impl<'a> Parser<'a> {
             TokenKind::Var => {
                 self.advance();
                 self.consume(TokenKind::Eq)?;
-                InputSource::Var(self.consume_string_literal()?)
+                Self::string_to_input_source(self.consume_string_literal()?)
             }
             TokenKind::Lit => {
                 self.advance();
@@ -2944,7 +2920,7 @@ impl<'a> Parser<'a> {
         let source = if self.at(TokenKind::From) {
             self.advance();
             self.consume(TokenKind::Eq)?;
-            InputSource::Var(self.consume_string_literal()?)
+            Self::string_to_input_source(self.consume_string_literal()?)
         } else if self.at(TokenKind::Lit) {
             self.advance();
             self.consume(TokenKind::Eq)?;
@@ -2995,12 +2971,12 @@ impl<'a> Parser<'a> {
         } else if self.at(TokenKind::Var) {
             self.advance();
             self.consume(TokenKind::Eq)?;
-            BindSource::Var(self.consume_string_literal()?)
+            Self::string_to_bind_source(self.consume_string_literal()?)
         } else if self.at(TokenKind::From) {
             // from="value" - bind from a variable
             self.advance();
             self.consume(TokenKind::Eq)?;
-            BindSource::Var(self.consume_string_literal()?)
+            Self::string_to_bind_source(self.consume_string_literal()?)
         } else if self.at(TokenKind::Lit) {
             self.advance();
             self.consume(TokenKind::Eq)?;
@@ -3024,8 +3000,9 @@ impl<'a> Parser<'a> {
     fn parse_if_step(&mut self) -> Result<IfStep, ParseError> {
         let start = self.span();
 
-        // condition="is_base"
-        let condition = self.parse_attribute("condition")?;
+        // condition="is_base" or condition="entry.is_directory"
+        let condition_str = self.parse_attribute("condition")?;
+        let condition = Self::string_to_input_source(condition_str);
 
         // then ... end
         self.consume(TokenKind::Ident)?; // "then" is not a keyword
@@ -3456,7 +3433,7 @@ impl<'a> Parser<'a> {
             TokenKind::Var => {
                 self.advance();
                 self.consume(TokenKind::Eq)?;
-                Ok(InputSource::Var(self.consume_string_literal()?))
+                Ok(Self::string_to_input_source(self.consume_string_literal()?))
             }
             TokenKind::Lit => {
                 self.advance();
@@ -3467,7 +3444,7 @@ impl<'a> Parser<'a> {
                 // from="var_name" is equivalent to var="var_name"
                 self.advance();
                 self.consume(TokenKind::Eq)?;
-                Ok(InputSource::Var(self.consume_string_literal()?))
+                Ok(Self::string_to_input_source(self.consume_string_literal()?))
             }
             TokenKind::Field => {
                 // field="x" of="y"
@@ -4097,18 +4074,21 @@ impl<'a> Parser<'a> {
         let target = self.consume_string_literal()?;
 
         // Optional type=... attribute
-        if self.at(TokenKind::Type) {
+        let rel_type = if self.at(TokenKind::Type) {
             self.advance();
             self.consume(TokenKind::Eq)?;
             // Consume the relation type (identifier, not string)
-            let _ = self.advance_text();
-        }
+            Some(self.advance_text())
+        } else {
+            None
+        };
 
         let end = self.span();
 
         Ok(RelationDecl {
             kind,
             target,
+            rel_type,
             span: start.merge(end),
         })
     }

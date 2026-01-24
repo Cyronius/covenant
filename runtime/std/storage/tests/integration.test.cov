@@ -34,10 +34,10 @@ tests
     end
 
     // Step 2: Build cache key
-    step id="s2" kind="compute"
-      op=concat
-      input lit="cache:user:"
-      input lit="user-cache-test"
+    step id="s2" kind="call"
+      fn="text.concat"
+      arg name="a" lit="cache:user:"
+      arg name="b" lit="user-cache-test"
       as="cache_key"
     end
 
@@ -73,10 +73,10 @@ tests
           input var="json_str"
           as="parsed"
         end
-        step id="s6b" kind="compute"
-          op=map_get
-          input var="parsed"
-          input lit="name"
+        step id="s6b" kind="call"
+          fn="map.get"
+          arg name="map" from="parsed"
+          arg name="key" lit="name"
           as="cached_name"
         end
       end
@@ -174,9 +174,9 @@ tests
       as="user1_prefs"
     end
 
-    step id="s7" kind="compute"
-      op=list_len
-      input var="user1_prefs"
+    step id="s7" kind="call"
+      fn="list.len"
+      arg name="list" from="user1_prefs"
       as="user1_count"
     end
 
@@ -201,9 +201,9 @@ tests
       as="user2_prefs"
     end
 
-    step id="s11" kind="compute"
-      op=list_len
-      input var="user2_prefs"
+    step id="s11" kind="call"
+      fn="list.len"
+      arg name="list" from="user2_prefs"
       as="user2_count"
     end
 
@@ -330,16 +330,16 @@ tests
     end
 
     // Step 3: Verify result count
-    step id="s7" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s7" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s8" kind="compute"
-      op=list_len
-      input var="docs"
+    step id="s8" kind="call"
+      fn="list.len"
+      arg name="list" from="docs"
       as="count"
     end
 
@@ -358,17 +358,17 @@ tests
     end
 
     // Step 4: Verify first result is most expensive
-    step id="s11" kind="compute"
-      op=list_get
-      input var="docs"
-      input lit=0
+    step id="s11" kind="call"
+      fn="list.get"
+      arg name="list" from="docs"
+      arg name="index" lit=0
       as="first_doc"
     end
 
-    step id="s12" kind="compute"
-      op=map_get
-      input field="data" of="first_doc"
-      input lit="price"
+    step id="s12" kind="call"
+      fn="map.get"
+      arg name="map" field="data" of="first_doc"
+      arg name="key" lit="price"
       as="first_price"
     end
 
@@ -387,17 +387,17 @@ tests
     end
 
     // Step 5: Verify second result
-    step id="s15" kind="compute"
-      op=list_get
-      input var="docs"
-      input lit=1
+    step id="s15" kind="call"
+      fn="list.get"
+      arg name="list" from="docs"
+      arg name="index" lit=1
       as="second_doc"
     end
 
-    step id="s16" kind="compute"
-      op=map_get
-      input field="data" of="second_doc"
-      input lit="price"
+    step id="s16" kind="call"
+      fn="map.get"
+      arg name="map" field="data" of="second_doc"
+      arg name="key" lit="price"
       as="second_price"
     end
 
@@ -416,10 +416,10 @@ tests
     end
 
     // Step 6: Verify total count in QueryResult
-    step id="s19" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="total"
+    step id="s19" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="total"
       as="total"
     end
 

@@ -1,0 +1,184 @@
+// std.list - List Operations
+//
+// Pure list manipulation functions.
+// No effects required — these operate on list values only.
+//
+// Platform backends:
+// - Deno: JavaScript Array methods (default target)
+// - Browser: JavaScript Array methods
+// - Node.js: JavaScript Array methods
+// - WASI: Custom list library
+//
+// Lists are represented as serialized arrays in WASM memory.
+
+// ============================================================
+// Length and Emptiness
+// ============================================================
+
+snippet id="list.len" kind="extern-abstract"
+
+signature
+  fn name="len"
+    param name="list" type="List<Any>"
+    returns type="Int"
+  end
+end
+
+metadata
+  description="Get the number of elements in a list"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="list.is_empty" kind="extern-abstract"
+
+signature
+  fn name="is_empty"
+    param name="list" type="List<Any>"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if list has no elements"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Element Access
+// ============================================================
+
+snippet id="list.get" kind="extern-abstract"
+
+signature
+  fn name="get"
+    param name="list" type="List<Any>"
+    param name="index" type="Int"
+    returns type="Any"
+  end
+end
+
+metadata
+  description="Get element at index (returns none if out of bounds)"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="list.first" kind="extern-abstract"
+
+signature
+  fn name="first"
+    param name="list" type="List<Any>"
+    returns type="Any"
+  end
+end
+
+metadata
+  description="Get the first element (returns none if empty)"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="list.last" kind="extern-abstract"
+
+signature
+  fn name="last"
+    param name="list" type="List<Any>"
+    returns type="Any"
+  end
+end
+
+metadata
+  description="Get the last element (returns none if empty)"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Modification
+// ============================================================
+
+snippet id="list.append" kind="extern-abstract"
+
+signature
+  fn name="append"
+    param name="list" type="List<Any>"
+    param name="item" type="Any"
+    returns type="List<Any>"
+  end
+end
+
+metadata
+  description="Return a new list with item appended"
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// Search
+// ============================================================
+
+snippet id="list.contains" kind="extern-abstract"
+
+signature
+  fn name="contains"
+    param name="list" type="List<Any>"
+    param name="item" type="Any"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if list contains item"
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// Transformation
+// ============================================================
+
+snippet id="list.flatten" kind="extern-abstract"
+
+signature
+  fn name="flatten"
+    param name="list" type="List<List<Any>>"
+    returns type="List<Any>"
+  end
+end
+
+metadata
+  description="Flatten a list of lists into a single list"
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// Map operations (temporary — until map gets its own module)
+// ============================================================
+
+snippet id="map.get" kind="extern-abstract"
+
+signature
+  fn name="get"
+    param name="map" type="Map<String, Any>"
+    param name="key" type="String"
+    returns type="Any"
+  end
+end
+
+metadata
+  description="Get value by key from a map"
+  cost_hint=cheap
+end
+
+end

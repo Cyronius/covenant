@@ -5,8 +5,6 @@ edition.workspace = true
 
 [dependencies]
 covenant-ast = { workspace = true }
+covenant-parser = { workspace = true }
 covenant-symbols = { path = "../covenant-symbols" }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-covenant-parser = { workspace = true }

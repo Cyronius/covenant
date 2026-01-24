@@ -110,7 +110,7 @@ fn mark_branch_reachable(steps: &[Step], reachable: &mut HashSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use covenant_ast::{BindSource, BindStep, IfStep, MatchCase, MatchPattern, MatchStep, ReturnStep, ReturnValue};
+    use covenant_ast::{BindSource, BindStep, IfStep, InputSource, MatchCase, MatchPattern, MatchStep, ReturnStep, ReturnValue};
     use covenant_ast::{Literal, Span};
 
     fn make_span() -> Span {
@@ -179,7 +179,7 @@ mod tests {
             Step {
                 id: "s1".into(),
                 kind: StepKind::If(IfStep {
-                    condition: "cond".into(),
+                    condition: InputSource::Var("cond".to_string()),
                     then_steps: vec![make_return_step("s1.1")],
                     else_steps: Some(vec![make_return_step("s1.2")]),
                     span: make_span(),
@@ -204,7 +204,7 @@ mod tests {
             Step {
                 id: "s1".into(),
                 kind: StepKind::If(IfStep {
-                    condition: "cond".into(),
+                    condition: InputSource::Var("cond".to_string()),
                     then_steps: vec![make_return_step("s1.1")],
                     else_steps: Some(vec![make_bind_step("s1.2", "y")]),
                     span: make_span(),
@@ -227,7 +227,7 @@ mod tests {
             Step {
                 id: "s1".into(),
                 kind: StepKind::If(IfStep {
-                    condition: "cond".into(),
+                    condition: InputSource::Var("cond".to_string()),
                     then_steps: vec![make_return_step("s1.1")],
                     else_steps: None, // no else = fall through
                     span: make_span(),

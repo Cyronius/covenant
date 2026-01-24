@@ -328,9 +328,9 @@ tests
       as="keys"
     end
 
-    step id="s5" kind="compute"
-      op=list_len
-      input var="keys"
+    step id="s5" kind="call"
+      fn="list.len"
+      arg name="list" from="keys"
       as="key_count"
     end
 
@@ -695,9 +695,9 @@ tests
       as="all_keys"
     end
 
-    step id="s6" kind="compute"
-      op=list_len
-      input var="all_keys"
+    step id="s6" kind="call"
+      fn="list.len"
+      arg name="list" from="all_keys"
       as="count"
     end
 
@@ -730,9 +730,9 @@ tests
       as="keys"
     end
 
-    step id="s2" kind="compute"
-      op=list_len
-      input var="keys"
+    step id="s2" kind="call"
+      fn="list.len"
+      arg name="list" from="keys"
       as="count"
     end
 

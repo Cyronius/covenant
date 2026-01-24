@@ -95,16 +95,7 @@ fn fold_operation(op: Operation, inputs: &[&Literal]) -> Option<Literal> {
         Operation::Min => fold_min_max(inputs, true),
         Operation::Max => fold_min_max(inputs, false),
 
-        // String operations that can be folded
-        Operation::Concat => fold_string_concat(inputs),
-        Operation::StrLen => fold_string_len(inputs),
-        Operation::Upper => fold_string_case(inputs, true),
-        Operation::Lower => fold_string_case(inputs, false),
-        Operation::Contains => fold_string_contains(inputs),
-        Operation::StartsWith => fold_string_starts_ends(inputs, true),
-        Operation::EndsWith => fold_string_starts_ends(inputs, false),
-        Operation::IsEmpty => fold_is_empty(inputs),
-
+        // String operations removed — now extern-abstract calls, not compute ops
         // Everything else can't be folded (or isn't worth the complexity)
         _ => None,
     }
@@ -245,79 +236,7 @@ fn fold_min_max(inputs: &[&Literal], is_min: bool) -> Option<Literal> {
     }
 }
 
-fn fold_string_concat(inputs: &[&Literal]) -> Option<Literal> {
-    if inputs.len() != 2 {
-        return None;
-    }
-    match (inputs[0], inputs[1]) {
-        (Literal::String(a), Literal::String(b)) => {
-            Some(Literal::String(format!("{}{}", a, b)))
-        }
-        _ => None,
-    }
-}
-
-fn fold_string_len(inputs: &[&Literal]) -> Option<Literal> {
-    if inputs.len() != 1 {
-        return None;
-    }
-    match inputs[0] {
-        Literal::String(s) => Some(Literal::Int(s.chars().count() as i64)),
-        _ => None,
-    }
-}
-
-fn fold_string_case(inputs: &[&Literal], to_upper: bool) -> Option<Literal> {
-    if inputs.len() != 1 {
-        return None;
-    }
-    match inputs[0] {
-        Literal::String(s) => {
-            let result = if to_upper { s.to_uppercase() } else { s.to_lowercase() };
-            Some(Literal::String(result))
-        }
-        _ => None,
-    }
-}
-
-fn fold_string_contains(inputs: &[&Literal]) -> Option<Literal> {
-    if inputs.len() != 2 {
-        return None;
-    }
-    match (inputs[0], inputs[1]) {
-        (Literal::String(haystack), Literal::String(needle)) => {
-            Some(Literal::Bool(haystack.contains(needle.as_str())))
-        }
-        _ => None,
-    }
-}
-
-fn fold_string_starts_ends(inputs: &[&Literal], is_starts: bool) -> Option<Literal> {
-    if inputs.len() != 2 {
-        return None;
-    }
-    match (inputs[0], inputs[1]) {
-        (Literal::String(s), Literal::String(pattern)) => {
-            let result = if is_starts {
-                s.starts_with(pattern.as_str())
-            } else {
-                s.ends_with(pattern.as_str())
-            };
-            Some(Literal::Bool(result))
-        }
-        _ => None,
-    }
-}
-
-fn fold_is_empty(inputs: &[&Literal]) -> Option<Literal> {
-    if inputs.len() != 1 {
-        return None;
-    }
-    match inputs[0] {
-        Literal::String(s) => Some(Literal::Bool(s.is_empty())),
-        _ => None,
-    }
-}
+// String folding functions removed — string operations are now extern-abstract calls
 
 #[cfg(test)]
 mod tests {
@@ -510,30 +429,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_fold_string_concat() {
-        let mut steps = vec![make_compute_step(
-            "s1",
-            "result",
-            Operation::Concat,
-            vec![
-                Literal::String("Hello, ".into()),
-                Literal::String("World!".into()),
-            ],
-        )];
-
-        let pass = ConstantFolding;
-        let result = pass.run(&mut steps, &make_ctx());
-
-        assert!(result.modified);
-        match &steps[0].kind {
-            StepKind::Bind(bind) => match &bind.source {
-                BindSource::Lit(Literal::String(s)) if s == "Hello, World!" => {}
-                other => panic!("Expected String(\"Hello, World!\"), got {:?}", other),
-            },
-            _ => panic!("Expected Bind"),
-        }
-    }
+    // test_fold_string_concat removed — Concat is now an extern-abstract call
 
     #[test]
     fn test_no_fold_with_variable() {

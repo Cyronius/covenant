@@ -21,6 +21,8 @@ use covenant_ast::{
 };
 use covenant_checker::SymbolTable;
 use crate::CodegenError;
+use crate::data_graph::DataGraph;
+use crate::gai_codegen::{self, GraphLayout, GaiFunctionIndices, GAI_FUNCTION_COUNT};
 
 // ===== Memory Layout Types =====
 
@@ -122,6 +124,24 @@ impl DataSegmentBuilder {
         self.data
     }
 
+    /// Prepend raw bytes (e.g., graph data segment) before any strings.
+    /// All existing string offsets are invalidated (call before adding strings).
+    pub fn prepend_raw(&mut self, raw: &[u8]) {
+        let mut new_data = raw.to_vec();
+        new_data.append(&mut self.data);
+        self.data = new_data;
+        // Adjust all cached string offsets
+        let offset_delta = raw.len() as u32;
+        for offset in self.string_offsets.values_mut() {
+            *offset += offset_delta;
+        }
+    }
+
+    /// Current data length (useful for computing offsets)
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     /// Check if segment has any data
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
@@ -194,64 +214,45 @@ pub struct SnippetWasmCompiler<'a> {
     local_types: HashMap<String, String>,
     /// Runtime function indices (set after imports are processed)
     runtime: RuntimeFunctions,
+    /// Generic extern-abstract imports: snippet ID → ExternImport
+    extern_imports: HashMap<String, ExternImport>,
+    /// GAI function indices (set when data snippets are present)
+    gai_indices: Option<GaiFunctionIndices>,
+    /// Graph layout (set when data snippets are present)
+    graph_layout: Option<GraphLayout>,
 }
 
-/// Runtime function indices for effectful operations
+/// Describes a registered extern-abstract import
+#[derive(Debug, Clone)]
+struct ExternImport {
+    /// WASM function index for this import
+    func_index: u32,
+    /// Parameter types from the signature (used to determine unpacking)
+    param_types: Vec<ExternParamKind>,
+}
+
+/// How an extern parameter maps to WASM calling convention
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ExternParamKind {
+    /// String: i64 fat pointer on stack, unpacked to (i32 ptr, i32 len) for host call
+    String,
+    /// Int: i64 on stack, wrapped to i32 for host call
+    Int,
+    /// Bool: i64 on stack, wrapped to i32 for host call
+    Bool,
+    /// List/Map/Any: i64 fat pointer (ptr+len of serialized data), same as String convention
+    FatPointer,
+}
+
+/// Runtime function indices for core operations
 #[derive(Debug, Default, Clone)]
 struct RuntimeFunctions {
-    /// Database query execution: covenant_db.execute_query(sql_ptr, sql_len, param_count) -> result_ptr
-    db_execute_query: Option<u32>,
-    /// HTTP fetch: covenant_http.fetch(url_ptr, url_len) -> response_ptr
-    http_fetch: Option<u32>,
-    /// Console print: covenant_io.print(ptr, len)
-    io_print: Option<u32>,
-    /// Memory allocation: covenant_mem.alloc(size) -> ptr
+    /// Memory allocation: mem.alloc(size) -> ptr
     mem_alloc: Option<u32>,
-    /// WASI fd_write for filesystem
-    wasi_fd_write: Option<u32>,
-
-    // --- Text/String operations (covenant_text module) ---
-    // Unary -> String: (ptr, len) -> i64 fat pointer
-    text_upper: Option<u32>,
-    text_lower: Option<u32>,
-    text_trim: Option<u32>,
-    text_trim_start: Option<u32>,
-    text_trim_end: Option<u32>,
-    text_str_reverse: Option<u32>,
-    // Unary -> Int: (ptr, len) -> i64
-    text_str_len: Option<u32>,
-    text_byte_len: Option<u32>,
-    text_is_empty: Option<u32>,
-    // Binary -> String: (ptr1, len1, ptr2, len2) -> i64 fat pointer
-    text_concat: Option<u32>,
-    // Binary -> Bool: (ptr1, len1, ptr2, len2) -> i64 (0/1)
-    text_contains: Option<u32>,
-    text_starts_with: Option<u32>,
-    text_ends_with: Option<u32>,
-    // Binary -> Int: (ptr1, len1, ptr2, len2) -> i64
-    text_index_of: Option<u32>,
-    // Slice: (ptr, len, start, end) -> i64 fat pointer
-    text_slice: Option<u32>,
-    // CharAt: (ptr, len, idx) -> i64 fat pointer
-    text_char_at: Option<u32>,
-    // Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64 fat pointer
-    text_replace: Option<u32>,
-    // Split: (ptr, len, delim_ptr, delim_len) -> i64 fat pointer (serialized array)
-    text_split: Option<u32>,
-    // Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> i64 fat pointer
-    text_join: Option<u32>,
-    // Repeat: (ptr, len, count) -> i64 fat pointer
-    text_repeat: Option<u32>,
-    // Pad: (ptr, len, target_len, fill_ptr, fill_len) -> i64 fat pointer
-    text_pad_start: Option<u32>,
-    text_pad_end: Option<u32>,
-
-    // --- Regex operations (covenant_text module) ---
-    text_regex_test: Option<u32>,
-    text_regex_match: Option<u32>,
-    text_regex_replace: Option<u32>,
-    text_regex_replace_all: Option<u32>,
-    text_regex_split: Option<u32>,
+    /// Database query execution: db.execute_query(sql_ptr, sql_len, param_count) -> result_ptr
+    db_execute_query: Option<u32>,
+    /// HTTP fetch: http.fetch(url_ptr, url_len) -> response_ptr
+    http_fetch: Option<u32>,
 }
 
 impl<'a> SnippetWasmCompiler<'a> {
@@ -266,6 +267,9 @@ impl<'a> SnippetWasmCompiler<'a> {
             struct_layouts: HashMap::new(),
             local_types: HashMap::new(),
             runtime: RuntimeFunctions::default(),
+            extern_imports: HashMap::new(),
+            gai_indices: None,
+            graph_layout: None,
         }
     }
 
@@ -279,7 +283,22 @@ impl<'a> SnippetWasmCompiler<'a> {
             .filter(|s| s.kind == SnippetKind::Function)
             .collect();
 
-        if functions.is_empty() {
+        // Check for data snippets - if present, build the graph and embed it
+        let has_data_snippets = snippets.iter().any(|s| s.kind == SnippetKind::Data);
+
+        if has_data_snippets {
+            let graph = DataGraph::from_snippets(snippets);
+            if graph.node_count() > 0 {
+                // Generate graph data segment at offset 0
+                let (seg_data, layout) = gai_codegen::generate_graph_segment(&graph, 0);
+                self.graph_layout = Some(layout);
+                // Pre-fill the data segment with graph data so that subsequent
+                // add_string() calls get correct offsets (after graph data)
+                self.data_segment.prepend_raw(&seg_data);
+            }
+        }
+
+        if functions.is_empty() && self.graph_layout.is_none() {
             // Return minimal valid WASM module
             return Ok(module.finish());
         }
@@ -288,16 +307,17 @@ impl<'a> SnippetWasmCompiler<'a> {
         let all_effects = collect_all_effects(&functions);
         self.register_effect_imports(&all_effects);
 
-        // Register text imports if any snippet uses string operations
-        let has_string_ops = functions.iter().any(|s| snippet_has_string_ops(s));
-        if has_string_ops {
-            self.register_text_imports();
-        }
+        // Register all extern-abstract imports (stdlib + user-defined)
+        self.register_extern_abstracts();
+        self.register_user_extern_abstracts(snippets);
 
         // Pre-scan for string literals to determine if we need memory
         let has_strings = functions.iter().any(|s| snippet_has_string_literals(s));
 
-        // Build type section (imports first, then functions)
+        // Determine how many GAI functions we need
+        let gai_count = if self.graph_layout.is_some() { GAI_FUNCTION_COUNT } else { 0 };
+
+        // Build type section (imports first, then user functions, then GAI functions)
         let mut types = TypeSection::new();
 
         // Add import types
@@ -305,7 +325,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             types.function(params.clone(), results.clone());
         }
 
-        // Add function types
+        // Add function types for user functions
         for snippet in &functions {
             if let Some(sig) = find_function_signature(snippet) {
                 let params: Vec<ValType> = sig
@@ -324,6 +344,14 @@ impl<'a> SnippetWasmCompiler<'a> {
                 types.function(params, results);
             }
         }
+
+        // Add GAI function types
+        if gai_count > 0 {
+            for (params, results) in gai_codegen::gai_function_types() {
+                types.function(params, results);
+            }
+        }
+
         module.section(&types);
 
         // Import section (if there are any imports)
@@ -347,16 +375,39 @@ impl<'a> SnippetWasmCompiler<'a> {
             }
         }
 
-        // Function section
+        // Compute GAI function indices (after user functions)
+        let gai_base_idx = import_count + functions.len() as u32;
+        if gai_count > 0 {
+            self.gai_indices = Some(GaiFunctionIndices {
+                node_count: gai_base_idx,
+                get_node_id: gai_base_idx + 1,
+                get_node_content: gai_base_idx + 2,
+                get_outgoing_count: gai_base_idx + 3,
+                get_outgoing_rel: gai_base_idx + 4,
+                get_incoming_count: gai_base_idx + 5,
+                get_incoming_rel: gai_base_idx + 6,
+                find_by_id: gai_base_idx + 7,
+                content_contains: gai_base_idx + 8,
+                get_rel_type_name: gai_base_idx + 9,
+            });
+        }
+
+        // Function section (user functions + GAI functions)
         let mut func_section = FunctionSection::new();
+        // User function type indices start after imports
         for i in 0..functions.len() {
             func_section.function(import_count + i as u32);
         }
+        // GAI function type indices start after user function types
+        let gai_type_base = import_count + functions.len() as u32;
+        for i in 0..gai_count {
+            func_section.function(gai_type_base + i);
+        }
         module.section(&func_section);
 
-        // Memory section - always export memory when compiling functions
-        // The runtime requires exported memory to run WASM modules
+        // Memory section - always export memory when compiling functions or data
         let needs_memory = !functions.is_empty()
+            || self.graph_layout.is_some()
             || !self.data_segment.is_empty()
             || !all_effects.is_empty()
             || has_strings;
@@ -375,8 +426,8 @@ impl<'a> SnippetWasmCompiler<'a> {
         // Global section for heap pointer
         if needs_memory {
             let mut globals = GlobalSection::new();
-            // Heap pointer starts after data segment
-            let heap_start = self.data_segment.data.len() as i32;
+            // Heap pointer starts after all data (graph + strings)
+            let heap_start = self.data_segment.len() as i32;
             globals.global(
                 GlobalType {
                     val_type: ValType::I32,
@@ -394,21 +445,41 @@ impl<'a> SnippetWasmCompiler<'a> {
                 exports.export(&sig.name, ExportKind::Func, import_count + i as u32);
             }
         }
+        // Export GAI functions with cov_ prefix for external access
+        if let Some(ref gai) = self.gai_indices {
+            exports.export("cov_node_count", ExportKind::Func, gai.node_count);
+            exports.export("cov_get_node_id", ExportKind::Func, gai.get_node_id);
+            exports.export("cov_get_node_content", ExportKind::Func, gai.get_node_content);
+            exports.export("cov_get_outgoing_count", ExportKind::Func, gai.get_outgoing_count);
+            exports.export("cov_get_outgoing_rel", ExportKind::Func, gai.get_outgoing_rel);
+            exports.export("cov_get_incoming_count", ExportKind::Func, gai.get_incoming_count);
+            exports.export("cov_get_incoming_rel", ExportKind::Func, gai.get_incoming_rel);
+            exports.export("cov_find_by_id", ExportKind::Func, gai.find_by_id);
+            exports.export("cov_content_contains", ExportKind::Func, gai.content_contains);
+            exports.export("cov_get_rel_type_name", ExportKind::Func, gai.get_rel_type_name);
+        }
         // Export memory if present
         if needs_memory {
             exports.export("memory", ExportKind::Memory, 0);
         }
         module.section(&exports);
 
-        // Code section
+        // Code section (user functions + GAI functions)
         let mut codes = CodeSection::new();
         for snippet in &functions {
             let wasm_func = self.compile_function_snippet(snippet)?;
             codes.function(&wasm_func);
         }
+        // Add GAI function bodies
+        if let Some(ref layout) = self.graph_layout {
+            let gai_funcs = gai_codegen::generate_gai_functions(layout);
+            for gai_func in gai_funcs {
+                codes.function(&gai_func);
+            }
+        }
         module.section(&codes);
 
-        // Data section (if we have string constants or SQL queries)
+        // Data section (graph data + string constants, already combined in data_segment)
         if !self.data_segment.is_empty() {
             let mut data = DataSection::new();
             let segment_data = std::mem::take(&mut self.data_segment).finish();
@@ -429,7 +500,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             match effect.as_str() {
                 "database" => {
                     self.runtime.db_execute_query = Some(self.imports.add_import(
-                        "covenant_db",
+                        "db",
                         "execute_query",
                         vec![ValType::I32, ValType::I32, ValType::I32], // sql_ptr, sql_len, param_count
                         vec![ValType::I32],                             // result_ptr
@@ -437,38 +508,25 @@ impl<'a> SnippetWasmCompiler<'a> {
                 }
                 "network" => {
                     self.runtime.http_fetch = Some(self.imports.add_import(
-                        "covenant_http",
+                        "http",
                         "fetch",
                         vec![ValType::I32, ValType::I32], // url_ptr, url_len
                         vec![ValType::I32],              // response_ptr
                     ));
                 }
-                "filesystem" => {
-                    self.runtime.wasi_fd_write = Some(self.imports.add_import(
-                        "wasi_snapshot_preview1",
-                        "fd_write",
-                        vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-                        vec![ValType::I32],
-                    ));
-                }
-                "console" | "std.io" => {
-                    self.runtime.io_print = Some(self.imports.add_import(
-                        "covenant_io",
-                        "print",
-                        vec![ValType::I32, ValType::I32], // ptr, len
-                        vec![],
-                    ));
-                }
                 _ => {
-                    // Unknown effect - might be user-defined, skip
+                    // Effects like "filesystem", "console", etc. are now handled
+                    // via extern-abstract registration — no special-casing needed.
                 }
             }
         }
+    }
 
-        // Always add memory allocator if we have any effects
-        if !effects.is_empty() {
+    /// Ensure the memory allocator import is registered
+    fn ensure_mem_alloc(&mut self) {
+        if self.runtime.mem_alloc.is_none() {
             self.runtime.mem_alloc = Some(self.imports.add_import(
-                "covenant_mem",
+                "mem",
                 "alloc",
                 vec![ValType::I32], // size
                 vec![ValType::I32], // ptr
@@ -476,179 +534,90 @@ impl<'a> SnippetWasmCompiler<'a> {
         }
     }
 
-    /// Register imports for text/string operations (effectless — triggered by AST scan)
-    fn register_text_imports(&mut self) {
-        // Ensure memory allocator is available (needed for host to write results)
-        if self.runtime.mem_alloc.is_none() {
-            self.runtime.mem_alloc = Some(self.imports.add_import(
-                "covenant_mem",
-                "alloc",
-                vec![ValType::I32],
-                vec![ValType::I32],
-            ));
+    /// Register all extern-abstract snippets from stdlib sources.
+    /// Parses each source, finds ExternAbstract snippets, and registers them as WASM imports.
+    fn register_extern_abstracts(&mut self) {
+        const STDLIB_SOURCES: &[&str] = &[
+            include_str!("../../../runtime/std/console/console.cov"),
+            include_str!("../../../runtime/std/filesystem/fs.cov"),
+            include_str!("../../../runtime/std/path/path.cov"),
+            include_str!("../../../runtime/std/text/text.cov"),
+            include_str!("../../../runtime/std/text/regex.cov"),
+            include_str!("../../../runtime/std/list/list.cov"),
+        ];
+
+        // Ensure mem.alloc is available for any extern that returns String/List
+        self.ensure_mem_alloc();
+
+        let mut snippets_to_register = Vec::new();
+        for source in STDLIB_SOURCES {
+            if let Ok(covenant_ast::Program::Snippets { snippets, .. }) = covenant_parser::parse(source) {
+                for snippet in snippets {
+                    if snippet.kind == SnippetKind::ExternAbstract {
+                        snippets_to_register.push(snippet);
+                    }
+                }
+            }
+        }
+        for snippet in snippets_to_register {
+            self.register_single_extern(&snippet);
+        }
+    }
+
+    /// Register a single extern-abstract snippet as a WASM import.
+    /// Splits snippet ID on last dot to derive (module, function) for the import.
+    fn register_single_extern(&mut self, snippet: &Snippet) {
+        let id = &snippet.id;
+
+        // Split ID on last dot: "text.concat" → ("text", "concat")
+        // "std.text.regex_test" → ("std.text", "regex_test")
+        let (module, func_name) = match id.rfind('.') {
+            Some(pos) => (&id[..pos], &id[pos + 1..]),
+            None => return, // Invalid ID format
+        };
+
+        // Get function signature to determine param types
+        let sig = match find_function_signature(snippet) {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Map param types to WASM types and ExternParamKind
+        let mut wasm_params = Vec::new();
+        let mut param_kinds = Vec::new();
+
+        for param in &sig.params {
+            let kind = type_to_extern_param_kind(&param.ty);
+            match kind {
+                ExternParamKind::String | ExternParamKind::FatPointer => {
+                    // Fat pointer: unpacked to (i32 ptr, i32 len)
+                    wasm_params.push(ValType::I32);
+                    wasm_params.push(ValType::I32);
+                }
+                ExternParamKind::Int | ExternParamKind::Bool => {
+                    wasm_params.push(ValType::I32);
+                }
+            }
+            param_kinds.push(kind);
         }
 
-        // Unary -> String: (ptr, len) -> i64 fat pointer
-        self.runtime.text_upper = Some(self.imports.add_import(
-            "covenant_text", "upper",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_lower = Some(self.imports.add_import(
-            "covenant_text", "lower",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_trim = Some(self.imports.add_import(
-            "covenant_text", "trim",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_trim_start = Some(self.imports.add_import(
-            "covenant_text", "trim_start",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_trim_end = Some(self.imports.add_import(
-            "covenant_text", "trim_end",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_str_reverse = Some(self.imports.add_import(
-            "covenant_text", "str_reverse",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
+        // Return type is always i64 (fat pointer for String/List, value for Int/Bool)
+        let wasm_results = vec![ValType::I64];
 
-        // Unary -> Int: (ptr, len) -> i64
-        self.runtime.text_str_len = Some(self.imports.add_import(
-            "covenant_text", "str_len",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_byte_len = Some(self.imports.add_import(
-            "covenant_text", "byte_len",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_is_empty = Some(self.imports.add_import(
-            "covenant_text", "is_empty",
-            vec![ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
+        let func_index = self.imports.add_import(module, func_name, wasm_params, wasm_results);
+        self.extern_imports.insert(id.clone(), ExternImport {
+            func_index,
+            param_types: param_kinds,
+        });
+    }
 
-        // Binary -> String: (ptr1, len1, ptr2, len2) -> i64 fat pointer
-        self.runtime.text_concat = Some(self.imports.add_import(
-            "covenant_text", "concat",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Binary -> Bool (as i64): (ptr1, len1, ptr2, len2) -> i64
-        self.runtime.text_contains = Some(self.imports.add_import(
-            "covenant_text", "contains",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_starts_with = Some(self.imports.add_import(
-            "covenant_text", "starts_with",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_ends_with = Some(self.imports.add_import(
-            "covenant_text", "ends_with",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Binary -> Int: (ptr1, len1, ptr2, len2) -> i64
-        self.runtime.text_index_of = Some(self.imports.add_import(
-            "covenant_text", "index_of",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Slice: (ptr, len, start, end) -> i64 fat pointer
-        self.runtime.text_slice = Some(self.imports.add_import(
-            "covenant_text", "slice",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // CharAt: (ptr, len, idx) -> i64 fat pointer
-        self.runtime.text_char_at = Some(self.imports.add_import(
-            "covenant_text", "char_at",
-            vec![ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64 fat pointer
-        self.runtime.text_replace = Some(self.imports.add_import(
-            "covenant_text", "replace",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Split: (ptr, len, delim_ptr, delim_len) -> i64 fat pointer
-        self.runtime.text_split = Some(self.imports.add_import(
-            "covenant_text", "split",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> i64 fat pointer
-        self.runtime.text_join = Some(self.imports.add_import(
-            "covenant_text", "join",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Repeat: (ptr, len, count) -> i64 fat pointer
-        self.runtime.text_repeat = Some(self.imports.add_import(
-            "covenant_text", "repeat",
-            vec![ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Pad: (ptr, len, target_len, fill_ptr, fill_len) -> i64 fat pointer
-        self.runtime.text_pad_start = Some(self.imports.add_import(
-            "covenant_text", "pad_start",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_pad_end = Some(self.imports.add_import(
-            "covenant_text", "pad_end",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-
-        // Regex: (pat_ptr, pat_len, in_ptr, in_len) -> i64 (bool or fat pointer)
-        self.runtime.text_regex_test = Some(self.imports.add_import(
-            "covenant_text", "regex_test",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_regex_match = Some(self.imports.add_import(
-            "covenant_text", "regex_match",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        // Regex replace: (pat_ptr, pat_len, in_ptr, in_len, rep_ptr, rep_len) -> i64
-        self.runtime.text_regex_replace = Some(self.imports.add_import(
-            "covenant_text", "regex_replace",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_regex_replace_all = Some(self.imports.add_import(
-            "covenant_text", "regex_replace_all",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
-        self.runtime.text_regex_split = Some(self.imports.add_import(
-            "covenant_text", "regex_split",
-            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            vec![ValType::I64],
-        ));
+    /// Also register user-defined extern-abstract snippets from the program
+    fn register_user_extern_abstracts(&mut self, snippets: &[Snippet]) {
+        for snippet in snippets {
+            if snippet.kind == SnippetKind::ExternAbstract {
+                self.register_single_extern(snippet);
+            }
+        }
     }
 
     /// Compile a single function snippet
@@ -702,18 +671,13 @@ impl<'a> SnippetWasmCompiler<'a> {
     /// Count the number of step bindings that need locals
     fn count_step_bindings(&self, steps: &[Step]) -> u32 {
         let mut count = 0;
-        let mut needs_text_locals = false;
         for step in steps {
             if step.output_binding != "_" {
                 count += 1;
             }
             // Count nested steps and special cases
             match &step.kind {
-                StepKind::Compute(compute) => {
-                    if is_string_operation(&compute.op) {
-                        needs_text_locals = true;
-                    }
-                }
+                StepKind::Compute(_) => {}
                 StepKind::If(if_step) => {
                     count += self.count_step_bindings(&if_step.then_steps);
                     if let Some(else_steps) = &if_step.else_steps {
@@ -735,14 +699,8 @@ impl<'a> SnippetWasmCompiler<'a> {
                     count += self.count_step_bindings(&for_step.steps);
                 }
                 StepKind::Call(call) => {
-                    // Runtime calls to console.* need a temp local for fat pointer unpacking
-                    if call.fn_name.starts_with("console.") {
-                        count += 1;
-                    }
-                    // Regex calls need 2 temp locals per argument (ptr unpack)
-                    if call.fn_name.starts_with("std.text.regex_") {
-                        count += call.args.len() as u32;
-                    }
+                    // Extern calls need a temp local per argument for fat pointer unpacking
+                    count += call.args.len() as u32;
                 }
                 StepKind::Construct(_) => {
                     // Struct construction needs a temp local for the pointer
@@ -750,13 +708,6 @@ impl<'a> SnippetWasmCompiler<'a> {
                 }
                 _ => {}
             }
-        }
-        // Text operation temp locals (allocated by name, so max across all ops):
-        // __text_unary, __text_bin_a, __text_bin_b, __text_slice_str/start/end,
-        // __text_char_str/idx, __text_rep_str/from/to, __text_repeat_str/n,
-        // __text_pad_str/tlen/fill = 15 unique names max
-        if needs_text_locals {
-            count += 15;
         }
         count
     }
@@ -1049,235 +1000,6 @@ impl<'a> SnippetWasmCompiler<'a> {
         Ok(())
     }
 
-    // ===== Text Operation Compilation Helpers =====
-
-    /// Compile a unary text operation: one i64 fat pointer on stack -> host call -> i64 result
-    /// Stack before: [fat_ptr]
-    /// Stack after: [result_i64]
-    fn compile_unary_text_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
-        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp = self.allocate_local("__text_unary");
-
-        // Store fat pointer
-        func.instruction(&Instruction::LocalSet(temp));
-
-        // Unpack: ptr = fat_ptr >> 32
-        func.instruction(&Instruction::LocalGet(temp));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Unpack: len = fat_ptr & 0xFFFFFFFF
-        func.instruction(&Instruction::LocalGet(temp));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Call host function
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile a binary text operation: two i64 fat pointers on stack -> host call -> i64 result
-    /// Stack before: [fat_ptr_a, fat_ptr_b] (b on top)
-    /// Stack after: [result_i64]
-    fn compile_binary_text_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
-        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_b = self.allocate_local("__text_bin_b");
-        let temp_a = self.allocate_local("__text_bin_a");
-
-        // Pop b then a
-        func.instruction(&Instruction::LocalSet(temp_b));
-        func.instruction(&Instruction::LocalSet(temp_a));
-
-        // Unpack a: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_a));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_a));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Unpack b: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_b));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_b));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Call host function
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile slice(string, start, end): string fat ptr + two int args
-    /// Stack before: [str_fat_ptr, start_i64, end_i64] (end on top)
-    fn compile_slice_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
-        let idx = self.runtime.text_slice.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_end = self.allocate_local("__text_slice_end");
-        let temp_start = self.allocate_local("__text_slice_start");
-        let temp_str = self.allocate_local("__text_slice_str");
-
-        func.instruction(&Instruction::LocalSet(temp_end));
-        func.instruction(&Instruction::LocalSet(temp_start));
-        func.instruction(&Instruction::LocalSet(temp_str));
-
-        // Unpack string: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Start index as i32
-        func.instruction(&Instruction::LocalGet(temp_start));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // End index as i32
-        func.instruction(&Instruction::LocalGet(temp_end));
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile char_at(string, index): string fat ptr + int arg
-    /// Stack before: [str_fat_ptr, idx_i64] (idx on top)
-    fn compile_char_at_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
-        let idx = self.runtime.text_char_at.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_idx = self.allocate_local("__text_char_idx");
-        let temp_str = self.allocate_local("__text_char_str");
-
-        func.instruction(&Instruction::LocalSet(temp_idx));
-        func.instruction(&Instruction::LocalSet(temp_str));
-
-        // Unpack string: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Index as i32
-        func.instruction(&Instruction::LocalGet(temp_idx));
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile replace(string, from, to): three fat pointers
-    /// Stack before: [str_fat_ptr, from_fat_ptr, to_fat_ptr] (to on top)
-    fn compile_replace_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
-        let idx = self.runtime.text_replace.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_to = self.allocate_local("__text_rep_to");
-        let temp_from = self.allocate_local("__text_rep_from");
-        let temp_str = self.allocate_local("__text_rep_str");
-
-        func.instruction(&Instruction::LocalSet(temp_to));
-        func.instruction(&Instruction::LocalSet(temp_from));
-        func.instruction(&Instruction::LocalSet(temp_str));
-
-        // Unpack string: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Unpack from: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_from));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_from));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Unpack to: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_to));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_to));
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile repeat(string, count): string fat ptr + int arg
-    /// Stack before: [str_fat_ptr, count_i64] (count on top)
-    fn compile_repeat_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
-        let idx = self.runtime.text_repeat.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_count = self.allocate_local("__text_repeat_n");
-        let temp_str = self.allocate_local("__text_repeat_str");
-
-        func.instruction(&Instruction::LocalSet(temp_count));
-        func.instruction(&Instruction::LocalSet(temp_str));
-
-        // Unpack string: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Count as i32
-        func.instruction(&Instruction::LocalGet(temp_count));
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
-
-    /// Compile pad_start/pad_end(string, target_len, fill): string fat ptr + int + fat ptr
-    /// Stack before: [str_fat_ptr, target_len_i64, fill_fat_ptr] (fill on top)
-    fn compile_pad_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
-        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
-        let temp_fill = self.allocate_local("__text_pad_fill");
-        let temp_tlen = self.allocate_local("__text_pad_tlen");
-        let temp_str = self.allocate_local("__text_pad_str");
-
-        func.instruction(&Instruction::LocalSet(temp_fill));
-        func.instruction(&Instruction::LocalSet(temp_tlen));
-        func.instruction(&Instruction::LocalSet(temp_str));
-
-        // Unpack string: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_str));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Target length as i32
-        func.instruction(&Instruction::LocalGet(temp_tlen));
-        func.instruction(&Instruction::I32WrapI64);
-
-        // Unpack fill: ptr, len
-        func.instruction(&Instruction::LocalGet(temp_fill));
-        func.instruction(&Instruction::I64Const(32));
-        func.instruction(&Instruction::I64ShrU);
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::LocalGet(temp_fill));
-        func.instruction(&Instruction::I32WrapI64);
-
-        func.instruction(&Instruction::Call(idx));
-        Ok(())
-    }
 
     /// Compile a query step
     ///
@@ -1398,84 +1120,6 @@ impl<'a> SnippetWasmCompiler<'a> {
                 func.instruction(&Instruction::I64Const(0));
                 func.instruction(&Instruction::I64Sub);
             }
-            // String operations: all compile to host calls via covenant_text imports.
-            // Inputs are i64 fat pointers on the stack; we unpack to (i32 ptr, i32 len) pairs.
-            Operation::Concat => {
-                self.compile_binary_text_op(func, self.runtime.text_concat)?;
-            }
-            Operation::Contains => {
-                self.compile_binary_text_op(func, self.runtime.text_contains)?;
-            }
-            Operation::StartsWith => {
-                self.compile_binary_text_op(func, self.runtime.text_starts_with)?;
-            }
-            Operation::EndsWith => {
-                self.compile_binary_text_op(func, self.runtime.text_ends_with)?;
-            }
-            Operation::IndexOf => {
-                self.compile_binary_text_op(func, self.runtime.text_index_of)?;
-            }
-            Operation::Upper => {
-                self.compile_unary_text_op(func, self.runtime.text_upper)?;
-            }
-            Operation::Lower => {
-                self.compile_unary_text_op(func, self.runtime.text_lower)?;
-            }
-            Operation::Trim => {
-                self.compile_unary_text_op(func, self.runtime.text_trim)?;
-            }
-            Operation::TrimStart => {
-                self.compile_unary_text_op(func, self.runtime.text_trim_start)?;
-            }
-            Operation::TrimEnd => {
-                self.compile_unary_text_op(func, self.runtime.text_trim_end)?;
-            }
-            Operation::StrReverse => {
-                self.compile_unary_text_op(func, self.runtime.text_str_reverse)?;
-            }
-            Operation::StrLen => {
-                self.compile_unary_text_op(func, self.runtime.text_str_len)?;
-            }
-            Operation::ByteLen => {
-                self.compile_unary_text_op(func, self.runtime.text_byte_len)?;
-            }
-            Operation::IsEmpty => {
-                self.compile_unary_text_op(func, self.runtime.text_is_empty)?;
-            }
-            Operation::Slice => {
-                // Inputs: string (fat ptr), start (i64), end (i64)
-                // Host sig: (ptr, len, start_i32, end_i32) -> i64
-                self.compile_slice_op(func)?;
-            }
-            Operation::CharAt => {
-                // Inputs: string (fat ptr), index (i64)
-                // Host sig: (ptr, len, idx_i32) -> i64
-                self.compile_char_at_op(func)?;
-            }
-            Operation::Replace => {
-                // Inputs: string (fat ptr), from (fat ptr), to (fat ptr)
-                // Host sig: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64
-                self.compile_replace_op(func)?;
-            }
-            Operation::Split => {
-                self.compile_binary_text_op(func, self.runtime.text_split)?;
-            }
-            Operation::Join => {
-                self.compile_binary_text_op(func, self.runtime.text_join)?;
-            }
-            Operation::Repeat => {
-                // Inputs: string (fat ptr), count (i64)
-                // Host sig: (ptr, len, count_i32) -> i64
-                self.compile_repeat_op(func)?;
-            }
-            Operation::PadStart => {
-                // Inputs: string (fat ptr), target_len (i64), fill (fat ptr)
-                // Host sig: (ptr, len, target_len, fill_ptr, fill_len) -> i64
-                self.compile_pad_op(func, self.runtime.text_pad_start)?;
-            }
-            Operation::PadEnd => {
-                self.compile_pad_op(func, self.runtime.text_pad_end)?;
-            }
             // All other operations are not yet supported in WASM codegen
             _ => {
                 return Err(CodegenError::UnsupportedExpression);
@@ -1507,78 +1151,42 @@ impl<'a> SnippetWasmCompiler<'a> {
         Ok(())
     }
 
-    /// Try to compile a call to a runtime/builtin function
-    /// Returns Some(import_index) if this is a runtime function, None otherwise
+    /// Try to compile a call to an extern-abstract function.
+    /// Returns Some(import_index) if this is a registered extern function, None otherwise.
     fn try_compile_runtime_call(&mut self, call: &CallStep, func: &mut Function) -> Result<Option<u32>, CodegenError> {
-        match call.fn_name.as_str() {
-            "console.println" | "console.print" | "console.error" => {
-                // These functions take a String argument and call covenant_io.print
-                let print_fn = self.runtime.io_print
-                    .ok_or_else(|| CodegenError::UndefinedFunction {
-                        name: "covenant_io.print (console effect not declared?)".to_string()
-                    })?;
+        // Look up the function name in registered extern imports
+        let ext = match self.extern_imports.get(&call.fn_name) {
+            Some(ext) => ext.clone(),
+            None => return Ok(None),
+        };
 
-                // Compile the message argument - this produces an i64 fat pointer on the stack
-                if let Some(arg) = call.args.first() {
-                    self.compile_input(&arg.source, func)?;
-                } else {
-                    return Err(CodegenError::UndefinedFunction {
-                        name: format!("{} requires a message argument", call.fn_name)
-                    });
-                }
+        // Compile each argument and unpack according to its type
+        for (i, arg) in call.args.iter().enumerate() {
+            self.compile_input(&arg.source, func)?;
 
-                // The argument is an i64 fat pointer: (offset << 32) | len
-                // We need to unpack it into two i32 values for the print import
-                // Allocate a temp local if we don't have one
-                let temp_local = self.allocate_local("__temp_fat_ptr");
-
-                // Store the fat pointer to temp local
-                func.instruction(&Instruction::LocalSet(temp_local));
-
-                // Extract offset (shift right 32, wrap to i32)
-                func.instruction(&Instruction::LocalGet(temp_local));
-                func.instruction(&Instruction::I64Const(32));
-                func.instruction(&Instruction::I64ShrU);
-                func.instruction(&Instruction::I32WrapI64);
-
-                // Extract length (mask lower 32 bits, wrap to i32)
-                func.instruction(&Instruction::LocalGet(temp_local));
-                func.instruction(&Instruction::I32WrapI64);
-
-                Ok(Some(print_fn))
-            }
-            // Regex operations: std.text.regex_*
-            name if name.starts_with("std.text.regex_") => {
-                let import_idx = match name {
-                    "std.text.regex_test" => self.runtime.text_regex_test,
-                    "std.text.regex_match" => self.runtime.text_regex_match,
-                    "std.text.regex_replace" => self.runtime.text_regex_replace,
-                    "std.text.regex_replace_all" => self.runtime.text_regex_replace_all,
-                    "std.text.regex_split" => self.runtime.text_regex_split,
-                    _ => return Err(CodegenError::UndefinedFunction { name: name.to_string() }),
-                };
-                let idx = import_idx.ok_or_else(|| CodegenError::UndefinedFunction {
-                    name: format!("{} (text imports not registered?)", name),
-                })?;
-
-                // Compile all arguments and unpack their fat pointers
-                for arg in &call.args {
-                    self.compile_input(&arg.source, func)?;
-                    // Each arg is an i64 fat pointer; unpack to (i32 ptr, i32 len)
-                    let temp = self.allocate_local(&format!("__regex_arg_{}", arg.name));
+            let param_kind = ext.param_types.get(i).copied().unwrap_or(ExternParamKind::FatPointer);
+            match param_kind {
+                ExternParamKind::String | ExternParamKind::FatPointer => {
+                    // i64 fat pointer on stack → unpack to (i32 ptr, i32 len)
+                    let temp = self.allocate_local(&format!("__ext_arg_{}", i));
                     func.instruction(&Instruction::LocalSet(temp));
+                    // ptr = fat_ptr >> 32
                     func.instruction(&Instruction::LocalGet(temp));
                     func.instruction(&Instruction::I64Const(32));
                     func.instruction(&Instruction::I64ShrU);
                     func.instruction(&Instruction::I32WrapI64);
+                    // len = fat_ptr & 0xFFFFFFFF
                     func.instruction(&Instruction::LocalGet(temp));
                     func.instruction(&Instruction::I32WrapI64);
                 }
-
-                Ok(Some(idx))
+                ExternParamKind::Int | ExternParamKind::Bool => {
+                    // i64 on stack → wrap to i32
+                    func.instruction(&Instruction::I32WrapI64);
+                }
             }
-            _ => Ok(None),
         }
+
+        Ok(Some(ext.func_index))
     }
 
     /// Compile a return step
@@ -1602,10 +1210,8 @@ impl<'a> SnippetWasmCompiler<'a> {
 
     /// Compile an if step
     fn compile_if_step(&mut self, if_step: &IfStep, func: &mut Function) -> Result<(), CodegenError> {
-        // Load condition variable
-        let cond_local = self.locals.get(&if_step.condition)
-            .ok_or_else(|| CodegenError::UndefinedFunction { name: if_step.condition.clone() })?;
-        func.instruction(&Instruction::LocalGet(*cond_local));
+        // Load condition value (variable, field access, or literal)
+        self.compile_input(&if_step.condition, func)?;
 
         // Wrap i64 to i32 for the if condition (if instruction expects i32)
         func.instruction(&Instruction::I32WrapI64);
@@ -1892,83 +1498,23 @@ fn steps_have_string_literals(steps: &[Step]) -> bool {
     false
 }
 
-/// Check if a snippet uses any string operations (triggers text import registration)
-fn snippet_has_string_ops(snippet: &Snippet) -> bool {
-    if let Some(body) = find_body_section(snippet) {
-        return steps_have_string_ops(&body.steps);
-    }
-    false
-}
 
-/// Check if steps contain any string operations
-fn steps_have_string_ops(steps: &[Step]) -> bool {
-    for step in steps {
-        match &step.kind {
-            StepKind::Compute(compute) => {
-                if is_string_operation(&compute.op) {
-                    return true;
-                }
+/// Map a Covenant type to the extern parameter calling convention
+fn type_to_extern_param_kind(ty: &Type) -> ExternParamKind {
+    match &ty.kind {
+        TypeKind::Named(path) => {
+            let name = path.segments.last().map(|s| s.as_str()).unwrap_or("");
+            match name {
+                "String" => ExternParamKind::String,
+                "Int" => ExternParamKind::Int,
+                "Bool" => ExternParamKind::Bool,
+                // Any, List, Map, etc. use fat pointer convention
+                _ => ExternParamKind::FatPointer,
             }
-            StepKind::Call(call) => {
-                if call.fn_name.starts_with("std.text.") {
-                    return true;
-                }
-            }
-            StepKind::If(if_step) => {
-                if steps_have_string_ops(&if_step.then_steps) {
-                    return true;
-                }
-                if let Some(else_steps) = &if_step.else_steps {
-                    if steps_have_string_ops(else_steps) {
-                        return true;
-                    }
-                }
-            }
-            StepKind::Match(match_step) => {
-                for case in &match_step.cases {
-                    if steps_have_string_ops(&case.steps) {
-                        return true;
-                    }
-                }
-            }
-            StepKind::For(for_step) => {
-                if steps_have_string_ops(&for_step.steps) {
-                    return true;
-                }
-            }
-            _ => {}
         }
+        TypeKind::List(_) => ExternParamKind::FatPointer,
+        _ => ExternParamKind::FatPointer,
     }
-    false
-}
-
-/// Returns true if the operation is a string operation requiring host calls
-fn is_string_operation(op: &Operation) -> bool {
-    matches!(
-        op,
-        Operation::Concat
-            | Operation::Contains
-            | Operation::Slice
-            | Operation::Upper
-            | Operation::Lower
-            | Operation::Trim
-            | Operation::TrimStart
-            | Operation::TrimEnd
-            | Operation::Replace
-            | Operation::Split
-            | Operation::Join
-            | Operation::Repeat
-            | Operation::StrLen
-            | Operation::ByteLen
-            | Operation::IsEmpty
-            | Operation::StartsWith
-            | Operation::EndsWith
-            | Operation::IndexOf
-            | Operation::CharAt
-            | Operation::StrReverse
-            | Operation::PadStart
-            | Operation::PadEnd
-    )
 }
 
 /// Compute a deterministic tag value for a variant name

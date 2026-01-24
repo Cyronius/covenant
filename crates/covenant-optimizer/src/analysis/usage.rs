@@ -87,8 +87,12 @@ fn collect_consumed_bindings(kind: &StepKind, consumed: &mut HashSet<String>) {
             collect_from_return(ret, consumed);
         }
         StepKind::If(if_step) => {
-            // Condition is a binding reference
-            consumed.insert(if_step.condition.clone());
+            // Condition is a binding reference or field access
+            match &if_step.condition {
+                InputSource::Var(name) => { consumed.insert(name.clone()); }
+                InputSource::Field { of, .. } => { consumed.insert(of.clone()); }
+                InputSource::Lit(_) => {}
+            }
         }
         StepKind::Match(match_step) => {
             // The value being matched on
@@ -344,7 +348,7 @@ mod tests {
         let steps = vec![Step {
             id: "s1".into(),
             kind: StepKind::If(IfStep {
-                condition: "cond".into(),
+                condition: InputSource::Var("cond".to_string()),
                 then_steps: vec![Step {
                     id: "s1.1".into(),
                     kind: StepKind::Compute(ComputeStep {

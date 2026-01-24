@@ -117,10 +117,10 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="hello from covenant"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="hello from covenant"
           as="has_output"
         end
       end
@@ -235,16 +235,16 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="arg1"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="arg1"
           as="has_arg1"
         end
-        step id="s2b" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="arg3"
+        step id="s2b" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="arg3"
           as="has_arg3"
         end
         step id="s2c" kind="compute"
@@ -286,10 +286,10 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stderr" of="r"
-          input lit="error-output"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stderr" of="r"
+          arg name="substr" lit="error-output"
           as="has_stderr"
         end
       end
@@ -325,10 +325,10 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="tmp"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="tmp"
           as="in_tmp"
         end
       end
@@ -365,10 +365,10 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="test-env-value-42"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="test-env-value-42"
           as="env_passed"
         end
       end
@@ -551,10 +551,10 @@ tests
               input lit=0
               as="exit_ok"
             end
-            step id="s2b2" kind="compute"
-              op=contains
-              input field="stdout" of="r"
-              input lit="spawn-wait-test"
+            step id="s2b2" kind="call"
+              fn="text.contains"
+              arg name="s" field="stdout" of="r"
+              arg name="substr" lit="spawn-wait-test"
               as="output_ok"
             end
             step id="s2b3" kind="compute"
@@ -691,16 +691,16 @@ tests
           input lit=0
           as="has_exit"
         end
-        step id="s2b" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="stdout-msg"
+        step id="s2b" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="stdout-msg"
           as="has_stdout"
         end
-        step id="s2c" kind="compute"
-          op=contains
-          input field="stderr" of="r"
-          input lit="stderr-msg"
+        step id="s2c" kind="call"
+          fn="text.contains"
+          arg name="s" field="stderr" of="r"
+          arg name="substr" lit="stderr-msg"
           as="has_stderr"
         end
         step id="s2d" kind="compute"
@@ -748,10 +748,10 @@ tests
       on="result"
 
       case variant type="ProcessResult" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="stdout" of="r"
-          input lit="hello world"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="stdout" of="r"
+          arg name="substr" lit="hello world"
           as="has_spaced_arg"
         end
       end

@@ -320,7 +320,10 @@ impl SymbolExtractor {
             .iter()
             .map(|rel| RelationRef {
                 target: rel.target.clone(),
-                relation_type: format!("{:?}", rel.kind).to_lowercase(),
+                relation_type: rel.rel_type.clone().unwrap_or_else(|| {
+                    format!("{:?}", rel.kind).to_lowercase()
+                }),
+                direction: rel.kind,
             })
             .collect()
     }

@@ -257,31 +257,10 @@ pub enum Operation {
     Not,
     Neg,
 
-    // String operations (existing)
-    Concat,
-    Contains,
-
-    // String operations (new)
-    Slice,
-    Upper,
-    Lower,
-    Trim,
-    TrimStart,
-    TrimEnd,
-    Replace,
-    Split,
-    Join,
-    Repeat,
-    StrLen,
-    ByteLen,
-    IsEmpty,
-    StartsWith,
-    EndsWith,
-    IndexOf,
-    CharAt,
-    StrReverse,
-    PadStart,
-    PadEnd,
+    // String operations — now extern-abstract calls (text.concat, text.upper, etc.)
+    // Removed: Concat, Contains, Slice, Upper, Lower, Trim, TrimStart, TrimEnd,
+    // Replace, Split, Join, Repeat, StrLen, ByteLen, IsEmpty, StartsWith, EndsWith,
+    // IndexOf, CharAt, StrReverse, PadStart, PadEnd
 
     // Numeric operations
     Abs,
@@ -312,28 +291,13 @@ pub enum Operation {
     ParseInt,
     ParseFloat,
 
-    // List operations
-    ListLen,
-    ListGet,
-    ListFirst,
-    ListLast,
-    ListAppend,
-    ListPrepend,
-    ListConcat,
-    ListSlice,
-    ListReverse,
-    ListTake,
-    ListDrop,
-    ListContains,
-    ListIndexOf,
-    ListIsEmpty,
-    ListSort,
-    ListDedup,
-    ListFlatten,
+    // List operations — now extern-abstract calls (list.len, list.get, etc.)
+    // Removed: ListLen, ListGet, ListFirst, ListLast, ListAppend, ListPrepend,
+    // ListConcat, ListSlice, ListReverse, ListTake, ListDrop, ListContains,
+    // ListIndexOf, ListIsEmpty, ListSort, ListDedup, ListFlatten
 
-    // Map operations
+    // Map operations (partially converted — MapGet is now map.get extern-abstract)
     MapLen,
-    MapGet,
     MapHas,
     MapInsert,
     MapRemove,
@@ -550,7 +514,7 @@ pub struct VariantConstruction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IfStep {
-    pub condition: String,
+    pub condition: InputSource,
     pub then_steps: Vec<Step>,
     pub else_steps: Option<Vec<Step>>,
     pub span: Span,
@@ -692,6 +656,7 @@ pub struct RelationsSection {
 pub struct RelationDecl {
     pub kind: RelationKind,
     pub target: String,
+    pub rel_type: Option<String>,
     pub span: Span,
 }
 

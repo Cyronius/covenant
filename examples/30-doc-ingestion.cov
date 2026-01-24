@@ -1,0 +1,776 @@
+// Example 30: Documentation Ingestion Tool
+//
+// Demonstrates:
+// - Recursive directory scanning with fs.readDir
+// - Reading file contents and transforming them
+// - Building .cov data node files as strings
+// - Writing generated output to disk
+// - For-loop iteration over collections
+// - String operations (concat, replace, split, slice)
+// - Conditional branching and pattern matching
+
+// =============================================================================
+// Entry Point
+// =============================================================================
+
+snippet id="doc_ingest.main" kind="fn"
+
+effects
+  effect filesystem
+  effect console
+end
+
+signature
+  fn name="main"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="bind"
+    lit="docs"
+    as="source_dir"
+  end
+
+  step id="s2" kind="bind"
+    lit="output/docs"
+    as="output_dir"
+  end
+
+  // Create output directory
+  step id="s3" kind="call"
+    fn="fs.mkdir"
+    arg name="path" from="output_dir"
+    arg name="recursive" lit=true
+    as="_"
+  end
+
+  // Discover all documentation files recursively
+  step id="s4" kind="call"
+    fn="doc_ingest.scan_dir_recursive"
+    arg name="dir_path" from="source_dir"
+    as="all_files"
+  end
+
+  step id="s5" kind="call"
+    fn="console.println"
+    arg name="message" lit="Starting documentation ingestion..."
+    as="_"
+  end
+
+  // Process each discovered file
+  step id="s6" kind="for"
+    var="file_path" in="all_files"
+
+    step id="s6a" kind="call"
+      fn="doc_ingest.process_file"
+      arg name="file_path" from="file_path"
+      arg name="output_dir" from="output_dir"
+      as="result"
+    end
+
+    step id="s6b" kind="call"
+      fn="text.concat"
+      arg name="a" lit="  Processed: "
+      arg name="b" from="file_path"
+      as="msg"
+    end
+
+    step id="s6c" kind="call"
+      fn="console.println"
+      arg name="message" from="msg"
+      as="_"
+    end
+
+    as="_"
+  end
+
+  step id="s7" kind="call"
+    fn="console.println"
+    arg name="message" lit="Documentation ingestion complete."
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Recursive Directory Scanner
+// =============================================================================
+
+snippet id="doc_ingest.scan_dir_recursive" kind="fn"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="scan_dir_recursive"
+    param name="dir_path" type="String"
+    returns union
+      type="List<String>"
+      type="IoError"
+    end
+  end
+end
+
+body
+  // Read directory entries
+  step id="s1" kind="call"
+    fn="fs.readDir"
+    arg name="path" from="dir_path"
+    as="entries"
+  end
+
+  // Iterate over entries, collecting file paths
+  step id="s2" kind="for"
+    var="entry" in="entries"
+
+    // Build full path
+    step id="s2a" kind="call"
+      fn="path.join"
+      arg name="base" from="dir_path"
+      arg name="segment" from="entry.name"
+      as="full_path"
+    end
+
+    step id="s2b" kind="if"
+      condition="entry.is_directory"
+      then
+        // Recurse into subdirectory
+        step id="s2b1" kind="call"
+          fn="doc_ingest.scan_dir_recursive"
+          arg name="dir_path" from="full_path"
+          as="sub_files"
+        end
+      end
+      else
+        // Check if file has a supported extension
+        step id="s2c1" kind="call"
+          fn="path.extname"
+          arg name="path" from="full_path"
+          as="ext"
+        end
+
+        step id="s2c2a" kind="compute"
+          op=equals
+          input var="ext"
+          input lit=".md"
+          as="is_md"
+        end
+
+        step id="s2c2b" kind="compute"
+          op=equals
+          input var="ext"
+          input lit=".ebnf"
+          as="is_ebnf"
+        end
+
+        step id="s2c2c" kind="compute"
+          op=equals
+          input var="ext"
+          input lit=".json"
+          as="is_json"
+        end
+
+        step id="s2c2d" kind="compute"
+          op=or
+          input var="is_ebnf"
+          input var="is_json"
+          as="is_ebnf_or_json"
+        end
+
+        step id="s2c2e" kind="compute"
+          op=or
+          input var="is_md"
+          input var="is_ebnf_or_json"
+          as="is_supported"
+        end
+
+        step id="s2c3" kind="if"
+          condition="is_supported"
+          then
+            step id="s2c3a" kind="bind"
+              from="full_path"
+              as="matched"
+            end
+          end
+          else
+            step id="s2c3b" kind="bind"
+              lit=none
+              as="matched"
+            end
+          end
+          as="_"
+        end
+      end
+      as="collected"
+    end
+
+    as="raw_results"
+  end
+
+  // Flatten the nested results into a single list
+  step id="s3" kind="call"
+    fn="list.flatten"
+    arg name="list" from="raw_results"
+    as="flat_files"
+  end
+
+  step id="s4" kind="return"
+    from="flat_files"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// File Processor
+// =============================================================================
+
+snippet id="doc_ingest.process_file" kind="fn"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="process_file"
+    param name="file_path" type="String"
+    param name="output_dir" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+body
+  // Read file content
+  step id="s1" kind="call"
+    fn="fs.read_file"
+    arg name="path" from="file_path"
+    as="content"
+  end
+
+  // Extract metadata
+  step id="s2" kind="call"
+    fn="doc_ingest.path_to_snippet_id"
+    arg name="file_path" from="file_path"
+    as="snippet_id"
+  end
+
+  step id="s3" kind="call"
+    fn="doc_ingest.extract_category"
+    arg name="file_path" from="file_path"
+    as="category"
+  end
+
+  step id="s4" kind="call"
+    fn="path.extname"
+    arg name="path" from="file_path"
+    as="ext"
+  end
+
+  step id="s5" kind="call"
+    fn="doc_ingest.ext_to_format"
+    arg name="ext" from="ext"
+    as="format"
+  end
+
+  step id="s6" kind="call"
+    fn="doc_ingest.extract_title"
+    arg name="content" from="content"
+    arg name="file_path" from="file_path"
+    as="title"
+  end
+
+  // Escape content for triple-quote embedding
+  step id="s7" kind="call"
+    fn="doc_ingest.escape_content"
+    arg name="raw" from="content"
+    as="escaped"
+  end
+
+  // Build the .cov data node file content
+  step id="s8" kind="call"
+    fn="doc_ingest.build_cov_content"
+    arg name="snippet_id" from="snippet_id"
+    arg name="category" from="category"
+    arg name="source_path" from="file_path"
+    arg name="format" from="format"
+    arg name="title" from="title"
+    arg name="content" from="escaped"
+    as="cov_content"
+  end
+
+  // Compute output file path
+  step id="s9" kind="call"
+    fn="text.concat"
+    arg name="a" from="snippet_id"
+    arg name="b" lit=".cov"
+    as="output_filename"
+  end
+
+  step id="s10" kind="call"
+    fn="path.join"
+    arg name="base" from="output_dir"
+    arg name="segment" from="output_filename"
+    as="output_path"
+  end
+
+  // Write the generated .cov file
+  step id="s11" kind="call"
+    fn="fs.write_file"
+    arg name="path" from="output_path"
+    arg name="content" from="cov_content"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Path to Snippet ID
+// Converts "docs/design/COMPILER.md" -> "docs.design.compiler"
+// =============================================================================
+
+snippet id="doc_ingest.path_to_snippet_id" kind="fn"
+
+signature
+  fn name="path_to_snippet_id"
+    param name="file_path" type="String"
+    returns type="String"
+  end
+end
+
+body
+  // Remove file extension
+  step id="s1" kind="call"
+    fn="path.extname"
+    arg name="path" from="file_path"
+    as="ext"
+  end
+
+  step id="s2" kind="call"
+    fn="text.replace"
+    arg name="s" from="file_path"
+    arg name="from" from="ext"
+    arg name="to" lit=""
+    as="no_ext"
+  end
+
+  // Replace path separators with dots
+  step id="s3" kind="call"
+    fn="text.replace"
+    arg name="s" from="no_ext"
+    arg name="from" lit="/"
+    arg name="to" lit="."
+    as="dotted"
+  end
+
+  // Handle Windows backslash separators
+  step id="s4" kind="call"
+    fn="text.replace"
+    arg name="s" from="dotted"
+    arg name="from" lit="\\"
+    arg name="to" lit="."
+    as="dotted_clean"
+  end
+
+  // Convert to lowercase
+  step id="s5" kind="call"
+    fn="text.lower"
+    arg name="s" from="dotted_clean"
+    as="lowered"
+  end
+
+  // Replace hyphens with underscores for valid identifiers
+  step id="s6" kind="call"
+    fn="text.replace"
+    arg name="s" from="lowered"
+    arg name="from" lit="-"
+    arg name="to" lit="_"
+    as="result"
+  end
+
+  step id="s7" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Extract Category
+// Extracts second path segment: "docs/design/COMPILER.md" -> "design"
+// =============================================================================
+
+snippet id="doc_ingest.extract_category" kind="fn"
+
+signature
+  fn name="extract_category"
+    param name="file_path" type="String"
+    returns type="String" optional
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="text.split"
+    arg name="s" from="file_path"
+    arg name="delimiter" lit="/"
+    as="segments"
+  end
+
+  // Second segment (index 1) is the category
+  step id="s2" kind="call"
+    fn="list.get"
+    arg name="list" from="segments"
+    arg name="index" lit=1
+    as="category"
+  end
+
+  step id="s3" kind="return"
+    from="category"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Extract Title
+// Gets first "# heading" line, or derives title from filename
+// =============================================================================
+
+snippet id="doc_ingest.extract_title" kind="fn"
+
+signature
+  fn name="extract_title"
+    param name="content" type="String"
+    param name="file_path" type="String"
+    returns type="String"
+  end
+end
+
+body
+  // Split content into lines and check first line for heading
+  step id="s1" kind="call"
+    fn="text.split"
+    arg name="s" from="content"
+    arg name="delimiter" lit="\n"
+    as="lines"
+  end
+
+  step id="s2" kind="call"
+    fn="list.first"
+    arg name="list" from="lines"
+    as="first_line"
+  end
+
+  step id="s3" kind="call"
+    fn="text.starts_with"
+    arg name="s" from="first_line"
+    arg name="prefix" lit="# "
+    as="has_heading"
+  end
+
+  step id="s4" kind="if"
+    condition="has_heading"
+    then
+      // Strip "# " prefix (take from index 2 onward)
+      step id="s4a" kind="call"
+        fn="text.str_len"
+        arg name="s" from="first_line"
+        as="line_len"
+      end
+      step id="s4b" kind="call"
+        fn="text.slice"
+        arg name="s" from="first_line"
+        arg name="start" lit=2
+        arg name="end" from="line_len"
+        as="title"
+      end
+    end
+    else
+      // Derive title from filename without extension
+      step id="s4c" kind="call"
+        fn="path.basename"
+        arg name="path" from="file_path"
+        as="filename"
+      end
+      step id="s4d" kind="call"
+        fn="path.extname"
+        arg name="path" from="file_path"
+        as="ext"
+      end
+      step id="s4e" kind="call"
+        fn="text.replace"
+        arg name="s" from="filename"
+        arg name="from" from="ext"
+        arg name="to" lit=""
+        as="title"
+      end
+    end
+    as="_"
+  end
+
+  step id="s5" kind="return"
+    from="title"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Extension to Format
+// Maps file extension to format name
+// =============================================================================
+
+snippet id="doc_ingest.ext_to_format" kind="fn"
+
+signature
+  fn name="ext_to_format"
+    param name="ext" type="String"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1a" kind="compute"
+    op=equals
+    input var="ext"
+    input lit=".md"
+    as="is_md"
+  end
+
+  step id="s1b" kind="if"
+    condition="is_md"
+    then
+      step id="s1b1" kind="bind"
+        lit="markdown"
+        as="format"
+      end
+    end
+    else
+      step id="s1c" kind="compute"
+        op=equals
+        input var="ext"
+        input lit=".ebnf"
+        as="is_ebnf"
+      end
+
+      step id="s1d" kind="if"
+        condition="is_ebnf"
+        then
+          step id="s1d1" kind="bind"
+            lit="ebnf"
+            as="format"
+          end
+        end
+        else
+          step id="s1e" kind="compute"
+            op=equals
+            input var="ext"
+            input lit=".json"
+            as="is_json"
+          end
+
+          step id="s1f" kind="if"
+            condition="is_json"
+            then
+              step id="s1f1" kind="bind"
+                lit="json"
+                as="format"
+              end
+            end
+            else
+              step id="s1g" kind="bind"
+                lit="text"
+                as="format"
+              end
+            end
+            as="_"
+          end
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+
+  step id="s2" kind="return"
+    from="format"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Escape Content
+// Escapes triple-quote sequences in raw content
+// =============================================================================
+
+snippet id="doc_ingest.escape_content" kind="fn"
+
+signature
+  fn name="escape_content"
+    param name="raw" type="String"
+    returns type="String"
+  end
+end
+
+body
+  // Replace any triple-quote sequences to avoid breaking the output format
+  step id="s1" kind="call"
+    fn="text.replace"
+    arg name="s" from="raw"
+    arg name="from" lit="\"\"\""
+    arg name="to" lit="\\\"\\\"\\\""
+    as="escaped"
+  end
+
+  step id="s2" kind="return"
+    from="escaped"
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Helper: Build .cov Content
+// Assembles the complete data node snippet as a string
+// =============================================================================
+
+snippet id="doc_ingest.build_cov_content" kind="fn"
+
+signature
+  fn name="build_cov_content"
+    param name="snippet_id" type="String"
+    param name="category" type="String"
+    param name="source_path" type="String"
+    param name="format" type="String"
+    param name="title" type="String"
+    param name="content" type="String"
+    returns type="String"
+  end
+end
+
+body
+  // Build header: snippet id="..." kind="data"
+  step id="s1" kind="call"
+    fn="text.concat"
+    arg name="a" lit="snippet id=\""
+    arg name="b" from="snippet_id"
+    as="p1"
+  end
+
+  step id="s2" kind="call"
+    fn="text.concat"
+    arg name="a" from="p1"
+    arg name="b" lit="\" kind=\"data\"\n\n"
+    as="p2"
+  end
+
+  // Build metadata section
+  step id="s3" kind="call"
+    fn="text.concat"
+    arg name="a" from="p2"
+    arg name="b" lit="metadata\n  type=\"document\"\n  category=\""
+    as="p3"
+  end
+
+  step id="s4" kind="call"
+    fn="text.concat"
+    arg name="a" from="p3"
+    arg name="b" from="category"
+    as="p4"
+  end
+
+  step id="s5" kind="call"
+    fn="text.concat"
+    arg name="a" from="p4"
+    arg name="b" lit="\"\n  source_path=\""
+    as="p5"
+  end
+
+  step id="s6" kind="call"
+    fn="text.concat"
+    arg name="a" from="p5"
+    arg name="b" from="source_path"
+    as="p6"
+  end
+
+  step id="s7" kind="call"
+    fn="text.concat"
+    arg name="a" from="p6"
+    arg name="b" lit="\"\n  format=\""
+    as="p7"
+  end
+
+  step id="s8" kind="call"
+    fn="text.concat"
+    arg name="a" from="p7"
+    arg name="b" from="format"
+    as="p8"
+  end
+
+  step id="s9" kind="call"
+    fn="text.concat"
+    arg name="a" from="p8"
+    arg name="b" lit="\"\n  title=\""
+    as="p9"
+  end
+
+  step id="s10" kind="call"
+    fn="text.concat"
+    arg name="a" from="p9"
+    arg name="b" from="title"
+    as="p10"
+  end
+
+  step id="s11" kind="call"
+    fn="text.concat"
+    arg name="a" from="p10"
+    arg name="b" lit="\"\nend\n\n"
+    as="p11"
+  end
+
+  // Build content section with triple-quoted string
+  step id="s12" kind="call"
+    fn="text.concat"
+    arg name="a" from="p11"
+    arg name="b" lit="content\n  \"\"\"\n"
+    as="p12"
+  end
+
+  step id="s13" kind="call"
+    fn="text.concat"
+    arg name="a" from="p12"
+    arg name="b" from="content"
+    as="p13"
+  end
+
+  step id="s14" kind="call"
+    fn="text.concat"
+    arg name="a" from="p13"
+    arg name="b" lit="\n  \"\"\"\nend\n\nend\n"
+    as="final"
+  end
+
+  step id="s15" kind="return"
+    from="final"
+    as="_"
+  end
+end
+
+end

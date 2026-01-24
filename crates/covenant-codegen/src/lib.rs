@@ -5,6 +5,8 @@
 mod ir;
 mod wasm;
 mod snippet_wasm;
+pub mod data_graph;
+pub mod gai_codegen;
 
 pub use ir::*;
 pub use wasm::*;

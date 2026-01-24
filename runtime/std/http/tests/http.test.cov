@@ -708,10 +708,10 @@ tests
       on="result"
 
       case variant type="Response" bindings=("r")
-        step id="s2a" kind="compute"
-          op=contains
-          input field="body" of="r"
-          input lit="httpbin.org"
+        step id="s2a" kind="call"
+          fn="text.contains"
+          arg name="s" field="body" of="r"
+          arg name="substr" lit="httpbin.org"
           as="body_ok"
         end
       end

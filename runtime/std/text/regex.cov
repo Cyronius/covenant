@@ -1,22 +1,21 @@
-(* std.text.regex - Regular Expression Operations *)
-(*
-   Pattern matching and substitution using native JavaScript RegExp.
-   Pure computation — no effects required.
+// std.text.regex - Regular Expression Operations
+//
+// Pattern matching and substitution using native JavaScript RegExp.
+// Pure computation — no effects required.
+//
+// Platform backends:
+// - Deno: V8 RegExp (default target)
+// - Browser: V8/SpiderMonkey/JSC RegExp
+// - Node.js: V8 RegExp
+//
+// Patterns are passed as plain strings (not precompiled).
+// Invalid patterns return safe defaults (false/empty/input unchanged).
 
-   Platform backends:
-   - Deno: V8 RegExp (default target)
-   - Browser: V8/SpiderMonkey/JSC RegExp
-   - Node.js: V8 RegExp
+// ============================================================
+// Regex Functions
+// ============================================================
 
-   Patterns are passed as plain strings (not precompiled).
-   Invalid patterns return safe defaults (false/empty/input unchanged).
-*)
-
-(* ============================================================ *)
-(* Regex Functions                                              *)
-(* ============================================================ *)
-
-(* Test if pattern matches input *)
+// Test if pattern matches input
 snippet id="std.text.regex_test" kind="extern-abstract"
 
 signature
@@ -34,7 +33,7 @@ end
 
 end
 
-(* Find first match (returns JSON-encoded MatchResult or empty string) *)
+// Find first match (returns JSON-encoded MatchResult or empty string)
 snippet id="std.text.regex_match" kind="extern-abstract"
 
 signature
@@ -52,7 +51,7 @@ end
 
 end
 
-(* Replace first match *)
+// Replace first match
 snippet id="std.text.regex_replace" kind="extern-abstract"
 
 signature
@@ -71,7 +70,7 @@ end
 
 end
 
-(* Replace all matches *)
+// Replace all matches
 snippet id="std.text.regex_replace_all" kind="extern-abstract"
 
 signature
@@ -90,7 +89,7 @@ end
 
 end
 
-(* Split by regex pattern *)
+// Split by regex pattern
 snippet id="std.text.regex_split" kind="extern-abstract"
 
 signature

@@ -593,9 +593,9 @@ tests
       on="result"
 
       case variant type="List" bindings=("entries")
-        step id="s5a" kind="compute"
-          op=list_len
-          input var="entries"
+        step id="s5a" kind="call"
+          fn="list.len"
+          arg name="list" from="entries"
           as="count"
         end
         step id="s5b" kind="compute"
@@ -661,9 +661,9 @@ tests
       on="result"
 
       case variant type="List" bindings=("entries")
-        step id="s3a" kind="compute"
-          op=list_len
-          input var="entries"
+        step id="s3a" kind="call"
+          fn="list.len"
+          arg name="list" from="entries"
           as="count"
         end
         step id="s3b" kind="compute"
@@ -1125,9 +1125,9 @@ tests
           on="chunk_result"
 
           case variant type="Bytes" bindings=("data")
-            step id="s3b1" kind="compute"
-              op=byte_len
-              input var="data"
+            step id="s3b1" kind="call"
+              fn="bytes.len"
+              arg name="bytes" from="data"
               as="chunk_len"
             end
             step id="s3b2" kind="compute"
@@ -1210,9 +1210,9 @@ tests
           on="chunk_result"
 
           case variant type="Bytes" bindings=("data")
-            step id="s3b1" kind="compute"
-              op=byte_len
-              input var="data"
+            step id="s3b1" kind="call"
+              fn="bytes.len"
+              arg name="bytes" from="data"
               as="chunk_len"
             end
             step id="s3b2" kind="compute"

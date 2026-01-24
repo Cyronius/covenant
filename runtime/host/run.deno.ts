@@ -1,17 +1,21 @@
 /**
- * Minimal Covenant WASM runner for Deno
+ * Covenant WASM runner for Deno
  *
- * Usage: deno run --allow-read run.deno.ts <file.wasm>
+ * Usage: deno run --allow-read --allow-write run.deno.ts <file.wasm>
  *
  * Provides the runtime imports required by Covenant-compiled WASM:
- * - covenant_io.print(ptr, len) - print string from memory
- * - covenant_mem.alloc(size) - allocate memory (simple bump allocator)
- * - covenant_text.* - string and regex operations
+ * - mem.alloc(size) - allocate memory (simple bump allocator)
+ * - console.* - console output functions
+ * - text.* - string operations
+ * - "std.text".* - regex operations
+ * - list.* - list operations
+ * - fs.* - filesystem operations
+ * - path.* - path operations
  */
 
 const wasmPath = Deno.args[0];
 if (!wasmPath) {
-  console.error('Usage: deno run --allow-read run.deno.ts <file.wasm>');
+  console.error('Usage: deno run --allow-read --allow-write run.deno.ts <file.wasm>');
   Deno.exit(1);
 }
 
@@ -80,33 +84,23 @@ function readStrArray(ptr: number, _len: number): string[] {
 }
 
 const imports: WebAssembly.Imports = {
-  covenant_io: {
-    /**
-     * Print a string from WASM memory
-     */
-    print: (ptr: number, len: number) => {
-      if (!memory) {
-        console.error('[runtime] Memory not initialized');
-        return;
-      }
-      const bytes = new Uint8Array(memory.buffer, ptr, len);
-      const str = new TextDecoder().decode(bytes);
-      console.log(str);
-    }
-  },
-  covenant_mem: {
-    /**
-     * Allocate memory (simple bump allocator)
-     */
+  mem: {
     alloc: (size: number): number => {
       const ptr = heapPtr;
-      // Align to 8 bytes
       heapPtr += (size + 7) & ~7;
       return ptr;
     }
   },
-  covenant_text: {
-    // --- Unary -> String ---
+  console: {
+    println: (ptr: number, len: number) => { console.log(readStr(ptr, len)); },
+    print: (ptr: number, len: number) => { Deno.stdout.writeSync(new TextEncoder().encode(readStr(ptr, len))); },
+    error: (ptr: number, len: number) => { console.error(readStr(ptr, len)); },
+    info: (ptr: number, len: number) => { console.info(readStr(ptr, len)); },
+    debug: (ptr: number, len: number) => { console.debug(readStr(ptr, len)); },
+    warn: (ptr: number, len: number) => { console.warn(readStr(ptr, len)); },
+  },
+  text: {
+    // Unary -> String
     upper: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).toUpperCase()),
     lower: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).toLowerCase()),
     trim: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).trim()),
@@ -114,72 +108,58 @@ const imports: WebAssembly.Imports = {
     trim_end: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).trimEnd()),
     str_reverse: (ptr: number, len: number): bigint => writeStr([...readStr(ptr, len)].reverse().join('')),
 
-    // --- Unary -> Int ---
+    // Unary -> Int/Bool
     str_len: (ptr: number, len: number): bigint => BigInt([...readStr(ptr, len)].length),
     byte_len: (_ptr: number, len: number): bigint => BigInt(len),
     is_empty: (_ptr: number, len: number): bigint => len === 0 ? 1n : 0n,
 
-    // --- Binary -> String ---
+    // Binary String ops
     concat: (p1: number, l1: number, p2: number, l2: number): bigint =>
       writeStr(readStr(p1, l1) + readStr(p2, l2)),
-
-    // --- Binary -> Bool (as i64 0/1) ---
     contains: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).includes(readStr(p2, l2)) ? 1n : 0n,
     starts_with: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).startsWith(readStr(p2, l2)) ? 1n : 0n,
     ends_with: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).endsWith(readStr(p2, l2)) ? 1n : 0n,
-
-    // --- Binary -> Int ---
     index_of: (p1: number, l1: number, p2: number, l2: number): bigint =>
       BigInt(readStr(p1, l1).indexOf(readStr(p2, l2))),
 
-    // --- Slice: (ptr, len, start, end) -> fat pointer ---
+    // Slice/CharAt
     slice: (ptr: number, len: number, start: number, end: number): bigint =>
       writeStr([...readStr(ptr, len)].slice(start, end).join('')),
-
-    // --- CharAt: (ptr, len, idx) -> fat pointer ---
     char_at: (ptr: number, len: number, idx: number): bigint => {
       const ch = [...readStr(ptr, len)][idx] ?? '';
       return writeStr(ch);
     },
 
-    // --- Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> fat pointer ---
+    // Multi-arg string ops
     replace: (sp: number, sl: number, fp: number, fl: number, tp: number, tl: number): bigint =>
       writeStr(readStr(sp, sl).replace(readStr(fp, fl), readStr(tp, tl))),
-
-    // --- Split: (ptr, len, delim_ptr, delim_len) -> fat pointer (serialized array) ---
     split: (ptr: number, len: number, dp: number, dl: number): bigint =>
       writeStrArray(readStr(ptr, len).split(readStr(dp, dl))),
-
-    // --- Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> fat pointer ---
     join: (ap: number, al: number, sp: number, sl: number): bigint =>
       writeStr(readStrArray(ap, al).join(readStr(sp, sl))),
-
-    // --- Repeat: (ptr, len, count) -> fat pointer ---
     repeat: (ptr: number, len: number, count: number): bigint =>
       writeStr(readStr(ptr, len).repeat(count)),
-
-    // --- Pad: (ptr, len, target_len, fill_ptr, fill_len) -> fat pointer ---
     pad_start: (ptr: number, len: number, targetLen: number, fp: number, fl: number): bigint =>
       writeStr(readStr(ptr, len).padStart(targetLen, readStr(fp, fl))),
     pad_end: (ptr: number, len: number, targetLen: number, fp: number, fl: number): bigint =>
       writeStr(readStr(ptr, len).padEnd(targetLen, readStr(fp, fl))),
-
-    // --- Regex operations (using native JavaScript RegExp) ---
+  },
+  "std.text": {
     regex_test: (pp: number, pl: number, ip: number, il: number): bigint => {
       try { return new RegExp(readStr(pp, pl)).test(readStr(ip, il)) ? 1n : 0n; }
       catch { return 0n; }
     },
     regex_match: (pp: number, pl: number, ip: number, il: number): bigint => {
       try {
-        const match = readStr(ip, il).match(new RegExp(readStr(pp, pl)));
-        if (!match) return 0n;
+        const m = readStr(ip, il).match(new RegExp(readStr(pp, pl)));
+        if (!m) return 0n;
         return writeStr(JSON.stringify({
-          matched: match[0],
-          index: match.index,
-          groups: match.slice(1),
+          matched: m[0],
+          index: m.index,
+          groups: m.slice(1),
         }));
       } catch { return 0n; }
     },
@@ -195,7 +175,195 @@ const imports: WebAssembly.Imports = {
       try { return writeStrArray(readStr(ip, il).split(new RegExp(readStr(pp, pl)))); }
       catch { return writeStrArray([readStr(ip, il)]); }
     },
-  }
+  },
+  list: {
+    len: (ptr: number, len: number): bigint => {
+      if (!memory || len === 0) return 0n;
+      const view = new DataView(memory.buffer);
+      return BigInt(view.getInt32(ptr, true));
+    },
+    is_empty: (ptr: number, len: number): bigint => {
+      if (!memory || len === 0) return 1n;
+      const view = new DataView(memory.buffer);
+      return view.getInt32(ptr, true) === 0 ? 1n : 0n;
+    },
+    get: (ptr: number, len: number, idx: number): bigint => {
+      if (!memory || len === 0) return 0n;
+      const view = new DataView(memory.buffer);
+      const count = view.getInt32(ptr, true);
+      if (idx < 0 || idx >= count) return 0n;
+      return view.getBigInt64(ptr + 4 + idx * 8, true);
+    },
+    first: (ptr: number, len: number): bigint => {
+      if (!memory || len === 0) return 0n;
+      const view = new DataView(memory.buffer);
+      const count = view.getInt32(ptr, true);
+      if (count === 0) return 0n;
+      return view.getBigInt64(ptr + 4, true);
+    },
+    last: (ptr: number, len: number): bigint => {
+      if (!memory || len === 0) return 0n;
+      const view = new DataView(memory.buffer);
+      const count = view.getInt32(ptr, true);
+      if (count === 0) return 0n;
+      return view.getBigInt64(ptr + 4 + (count - 1) * 8, true);
+    },
+    append: (ptr: number, len: number, item_ptr: number, item_len: number): bigint => {
+      // Read existing array, append item, write new array
+      const items = readStrArray(ptr, len);
+      items.push(readStr(item_ptr, item_len));
+      return writeStrArray(items);
+    },
+    contains: (ptr: number, len: number, item_ptr: number, item_len: number): bigint => {
+      const items = readStrArray(ptr, len);
+      const needle = readStr(item_ptr, item_len);
+      return items.includes(needle) ? 1n : 0n;
+    },
+    flatten: (ptr: number, len: number): bigint => {
+      // Each element in the outer array is itself a fat pointer to an inner array
+      if (!memory || len === 0) return writeStrArray([]);
+      const view = new DataView(memory.buffer);
+      const outerCount = view.getInt32(ptr, true);
+      const result: string[] = [];
+      for (let i = 0; i < outerCount; i++) {
+        const innerFat = view.getBigInt64(ptr + 4 + i * 8, true);
+        const innerPtr = Number(innerFat >> 32n);
+        const innerLen = Number(innerFat & 0xFFFFFFFFn);
+        result.push(...readStrArray(innerPtr, innerLen));
+      }
+      return writeStrArray(result);
+    },
+  },
+  map: {
+    get: (ptr: number, len: number, key_ptr: number, key_len: number): bigint => {
+      // Maps are stored as JSON strings for now
+      if (!memory || len === 0) return 0n;
+      try {
+        const mapStr = readStr(ptr, len);
+        const obj = JSON.parse(mapStr);
+        const key = readStr(key_ptr, key_len);
+        const val = obj[key];
+        if (val === undefined) return 0n;
+        return writeStr(String(val));
+      } catch { return 0n; }
+    },
+  },
+  fs: {
+    read_file: (ptr: number, len: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        const content = Deno.readTextFileSync(path);
+        return writeStr(content);
+      } catch { return 0n; }
+    },
+    write_file: (pp: number, pl: number, cp: number, cl: number): bigint => {
+      try {
+        const path = readStr(pp, pl);
+        const content = readStr(cp, cl);
+        Deno.writeTextFileSync(path, content);
+        return 1n;
+      } catch { return 0n; }
+    },
+    mkdir: (ptr: number, len: number, recursive: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        Deno.mkdirSync(path, { recursive: recursive !== 0 });
+        return 1n;
+      } catch { return 0n; }
+    },
+    exists: (ptr: number, len: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        Deno.statSync(path);
+        return 1n;
+      } catch { return 0n; }
+    },
+    remove: (ptr: number, len: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        Deno.removeSync(path);
+        return 1n;
+      } catch { return 0n; }
+    },
+    stat: (ptr: number, len: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        const info = Deno.statSync(path);
+        return writeStr(JSON.stringify({
+          size: info.size,
+          isFile: info.isFile,
+          isDirectory: info.isDirectory,
+          modified: info.mtime?.getTime() ?? 0,
+        }));
+      } catch { return 0n; }
+    },
+    copy: (sp: number, sl: number, dp: number, dl: number): bigint => {
+      try {
+        Deno.copyFileSync(readStr(sp, sl), readStr(dp, dl));
+        return 1n;
+      } catch { return 0n; }
+    },
+    rename: (sp: number, sl: number, dp: number, dl: number): bigint => {
+      try {
+        Deno.renameSync(readStr(sp, sl), readStr(dp, dl));
+        return 1n;
+      } catch { return 0n; }
+    },
+    read_dir: (ptr: number, len: number): bigint => {
+      try {
+        const path = readStr(ptr, len);
+        const entries: string[] = [];
+        for (const entry of Deno.readDirSync(path)) {
+          entries.push(entry.name);
+        }
+        return writeStrArray(entries);
+      } catch { return writeStrArray([]); }
+    },
+  },
+  path: {
+    join: (bp: number, bl: number, sp: number, sl: number): bigint => {
+      const base = readStr(bp, bl);
+      const seg = readStr(sp, sl);
+      // Simple path join
+      const sep = base.includes('\\') ? '\\' : '/';
+      const joined = base.endsWith(sep) ? base + seg : base + sep + seg;
+      return writeStr(joined);
+    },
+    extname: (ptr: number, len: number): bigint => {
+      const p = readStr(ptr, len);
+      const dot = p.lastIndexOf('.');
+      return writeStr(dot >= 0 ? p.slice(dot) : '');
+    },
+    basename: (ptr: number, len: number): bigint => {
+      const p = readStr(ptr, len);
+      const sep = p.includes('\\') ? '\\' : '/';
+      const parts = p.split(sep);
+      return writeStr(parts[parts.length - 1] || '');
+    },
+    dirname: (ptr: number, len: number): bigint => {
+      const p = readStr(ptr, len);
+      const sep = p.includes('\\') ? '\\' : '/';
+      const parts = p.split(sep);
+      parts.pop();
+      return writeStr(parts.join(sep) || '.');
+    },
+    is_absolute: (ptr: number, len: number): bigint => {
+      const p = readStr(ptr, len);
+      return (p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) ? 1n : 0n;
+    },
+  },
+  db: {
+    execute_query: (_sql_ptr: number, _sql_len: number, _param_count: number): number => {
+      console.error('[runtime] Database queries not supported in Deno runner');
+      return 0;
+    },
+  },
+  http: {
+    fetch: (_url_ptr: number, _url_len: number): number => {
+      console.error('[runtime] HTTP fetch not supported in synchronous Deno runner');
+      return 0;
+    },
+  },
 };
 
 try {

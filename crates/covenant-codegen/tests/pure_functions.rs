@@ -24,7 +24,37 @@ fn compile_and_instantiate(source: &str) -> (Store<()>, Instance) {
         .expect("Failed to create WASM module");
 
     let mut store = Store::new(&engine, ());
-    let linker = Linker::new(&engine);
+    let mut linker = Linker::new(&engine);
+
+    // Provide stub imports for all extern-abstract modules registered by codegen
+    linker.func_wrap("mem", "alloc", |_size: i32| -> i32 { 0x10000 }).unwrap();
+
+    // Provide no-op stubs for all other imported functions
+    let module_ref = Module::new(&engine, &wasm_bytes).unwrap();
+    for import in module_ref.imports() {
+        let module_name = import.module();
+        let name = import.name();
+        if module_name == "mem" && name == "alloc" {
+            continue;
+        }
+        match import.ty() {
+            wasmtime::ExternType::Func(func_ty) => {
+                let results_len = func_ty.results().len();
+                if results_len == 0 {
+                    let _ = linker.func_new(module_name, name, func_ty.clone(), |_caller, _params, _results| Ok(()));
+                } else {
+                    let _ = linker.func_new(module_name, name, func_ty.clone(), |_caller, _params, results| {
+                        for r in results.iter_mut() {
+                            *r = wasmtime::Val::I64(0);
+                        }
+                        Ok(())
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
     let instance = linker.instantiate(&mut store, &module)
         .expect("Failed to instantiate module");
 

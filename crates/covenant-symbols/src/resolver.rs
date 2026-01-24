@@ -30,6 +30,9 @@ const RELATION_INVERSES: &[(&str, &str)] = &[
     ("related_to", "related_to"),
     ("depends_on", "depends_on"),
     ("version_of", "version_of"),
+    ("related_to", "related_to"),
+    ("depends_on", "depends_on"),
+    ("version_of", "version_of"),
 ];
 
 /// Resolves backward references (Pass 2)
@@ -112,6 +115,7 @@ impl BackwardResolver {
                         target_mut.relations_from.push(RelationRef {
                             target: caller_name.clone(),
                             relation_type: inverse_type,
+                            direction: covenant_ast::RelationKind::From,
                         });
                     }
                 } else {

@@ -1,0 +1,415 @@
+// std.text - Text/String Operations
+//
+// Pure string manipulation functions.
+// No effects required — these operate on string values only.
+//
+// Platform backends:
+// - Deno: JavaScript String methods (default target)
+// - Browser: JavaScript String methods
+// - Node.js: JavaScript String methods
+// - WASI: Custom string library
+
+// ============================================================
+// Concatenation
+// ============================================================
+
+snippet id="text.concat" kind="extern-abstract"
+
+signature
+  fn name="concat"
+    param name="a" type="String"
+    param name="b" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Concatenate two strings"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Case Conversion
+// ============================================================
+
+snippet id="text.upper" kind="extern-abstract"
+
+signature
+  fn name="upper"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Convert string to uppercase"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.lower" kind="extern-abstract"
+
+signature
+  fn name="lower"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Convert string to lowercase"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Trimming
+// ============================================================
+
+snippet id="text.trim" kind="extern-abstract"
+
+signature
+  fn name="trim"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Remove leading and trailing whitespace"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.trim_start" kind="extern-abstract"
+
+signature
+  fn name="trim_start"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Remove leading whitespace"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.trim_end" kind="extern-abstract"
+
+signature
+  fn name="trim_end"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Remove trailing whitespace"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Search and Containment
+// ============================================================
+
+snippet id="text.contains" kind="extern-abstract"
+
+signature
+  fn name="contains"
+    param name="haystack" type="String"
+    param name="needle" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string contains substring"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.starts_with" kind="extern-abstract"
+
+signature
+  fn name="starts_with"
+    param name="s" type="String"
+    param name="prefix" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string starts with prefix"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.ends_with" kind="extern-abstract"
+
+signature
+  fn name="ends_with"
+    param name="s" type="String"
+    param name="suffix" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string ends with suffix"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.index_of" kind="extern-abstract"
+
+signature
+  fn name="index_of"
+    param name="haystack" type="String"
+    param name="needle" type="String"
+    returns type="Int"
+  end
+end
+
+metadata
+  description="Find index of first occurrence of needle (-1 if not found)"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Extraction and Slicing
+// ============================================================
+
+snippet id="text.slice" kind="extern-abstract"
+
+signature
+  fn name="slice"
+    param name="s" type="String"
+    param name="start" type="Int"
+    param name="end" type="Int"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Extract substring from start to end index"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.char_at" kind="extern-abstract"
+
+signature
+  fn name="char_at"
+    param name="s" type="String"
+    param name="index" type="Int"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Get character at index as a single-character string"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Replacement and Transformation
+// ============================================================
+
+snippet id="text.replace" kind="extern-abstract"
+
+signature
+  fn name="replace"
+    param name="s" type="String"
+    param name="from" type="String"
+    param name="to" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Replace first occurrence of 'from' with 'to'"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.split" kind="extern-abstract"
+
+signature
+  fn name="split"
+    param name="s" type="String"
+    param name="delimiter" type="String"
+    returns type="List<String>"
+  end
+end
+
+metadata
+  description="Split string by delimiter into a list of strings"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="text.join" kind="extern-abstract"
+
+signature
+  fn name="join"
+    param name="parts" type="List<String>"
+    param name="separator" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Join a list of strings with separator"
+  cost_hint=moderate
+end
+
+end
+
+snippet id="text.repeat" kind="extern-abstract"
+
+signature
+  fn name="repeat"
+    param name="s" type="String"
+    param name="count" type="Int"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Repeat string count times"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Length and Emptiness
+// ============================================================
+
+snippet id="text.str_len" kind="extern-abstract"
+
+signature
+  fn name="str_len"
+    param name="s" type="String"
+    returns type="Int"
+  end
+end
+
+metadata
+  description="Get character length of string"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.byte_len" kind="extern-abstract"
+
+signature
+  fn name="byte_len"
+    param name="s" type="String"
+    returns type="Int"
+  end
+end
+
+metadata
+  description="Get byte length of UTF-8 encoded string"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.is_empty" kind="extern-abstract"
+
+signature
+  fn name="is_empty"
+    param name="s" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string is empty"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Reversal
+// ============================================================
+
+snippet id="text.str_reverse" kind="extern-abstract"
+
+signature
+  fn name="str_reverse"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Reverse the characters in a string"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Padding
+// ============================================================
+
+snippet id="text.pad_start" kind="extern-abstract"
+
+signature
+  fn name="pad_start"
+    param name="s" type="String"
+    param name="target_len" type="Int"
+    param name="fill" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Pad string at start to reach target length"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="text.pad_end" kind="extern-abstract"
+
+signature
+  fn name="pad_end"
+    param name="s" type="String"
+    param name="target_len" type="Int"
+    param name="fill" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Pad string at end to reach target length"
+  cost_hint=cheap
+end
+
+end

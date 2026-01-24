@@ -422,16 +422,16 @@ tests
       as="result"
     end
 
-    step id="s4" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s4" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s5" kind="compute"
-      op=list_len
-      input var="docs"
+    step id="s5" kind="call"
+      fn="list.len"
+      arg name="list" from="docs"
       as="count"
     end
 
@@ -490,16 +490,16 @@ tests
       as="result"
     end
 
-    step id="s4" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s4" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s5" kind="compute"
-      op=list_len
-      input var="docs"
+    step id="s5" kind="call"
+      fn="list.len"
+      arg name="list" from="docs"
       as="count"
     end
 
@@ -566,16 +566,16 @@ tests
       as="result"
     end
 
-    step id="s5" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s5" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s6" kind="compute"
-      op=list_len
-      input var="docs"
+    step id="s6" kind="call"
+      fn="list.len"
+      arg name="list" from="docs"
       as="count"
     end
 
@@ -650,24 +650,24 @@ tests
       as="result"
     end
 
-    step id="s5" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s5" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s6" kind="compute"
-      op=list_get
-      input var="docs"
-      input lit=0
+    step id="s6" kind="call"
+      fn="list.get"
+      arg name="list" from="docs"
+      arg name="index" lit=0
       as="first"
     end
 
-    step id="s7" kind="compute"
-      op=map_get
-      input field="data" of="first"
-      input lit="name"
+    step id="s7" kind="call"
+      fn="map.get"
+      arg name="map" field="data" of="first"
+      arg name="key" lit="name"
       as="first_name"
     end
 
@@ -741,16 +741,16 @@ tests
       as="result"
     end
 
-    step id="s5" kind="compute"
-      op=map_get
-      input var="result"
-      input lit="documents"
+    step id="s5" kind="call"
+      fn="map.get"
+      arg name="map" from="result"
+      arg name="key" lit="documents"
       as="docs"
     end
 
-    step id="s6" kind="compute"
-      op=list_len
-      input var="docs"
+    step id="s6" kind="call"
+      fn="list.len"
+      arg name="list" from="docs"
       as="count"
     end
 
@@ -905,10 +905,10 @@ tests
       on="doc_a"
 
       case variant type="Some" bindings=("d")
-        step id="s4a" kind="compute"
-          op=map_get
-          input field="data" of="d"
-          input lit="name"
+        step id="s4a" kind="call"
+          fn="map.get"
+          arg name="map" field="data" of="d"
+          arg name="key" lit="name"
           as="name_a"
         end
       end
@@ -978,22 +978,22 @@ tests
       on="result"
 
       case variant type="Some" bindings=("d")
-        step id="s3a" kind="compute"
-          op=map_get
-          input field="data" of="d"
-          input lit="user"
+        step id="s3a" kind="call"
+          fn="map.get"
+          arg name="map" field="data" of="d"
+          arg name="key" lit="user"
           as="user"
         end
-        step id="s3b" kind="compute"
-          op=map_get
-          input var="user"
-          input lit="address"
+        step id="s3b" kind="call"
+          fn="map.get"
+          arg name="map" from="user"
+          arg name="key" lit="address"
           as="address"
         end
-        step id="s3c" kind="compute"
-          op=map_get
-          input var="address"
-          input lit="city"
+        step id="s3c" kind="call"
+          fn="map.get"
+          arg name="map" from="address"
+          arg name="key" lit="city"
           as="city"
         end
         step id="s3d" kind="compute"
@@ -1055,15 +1055,15 @@ tests
       on="result"
 
       case variant type="Some" bindings=("d")
-        step id="s3a" kind="compute"
-          op=map_get
-          input field="data" of="d"
-          input lit="tags"
+        step id="s3a" kind="call"
+          fn="map.get"
+          arg name="map" field="data" of="d"
+          arg name="key" lit="tags"
           as="tags"
         end
-        step id="s3b" kind="compute"
-          op=list_len
-          input var="tags"
+        step id="s3b" kind="call"
+          fn="list.len"
+          arg name="list" from="tags"
           as="tag_count"
         end
         step id="s3c" kind="compute"
