@@ -5,7 +5,7 @@
  * using target="project" queries.
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 async function main() {
   console.log("=== Example 14: Project Queries ===\n");
@@ -15,7 +15,7 @@ async function main() {
   // Load the compiled WASM module
   console.log("Loading WASM module...");
   try {
-    await runner.load("./examples/14-project-queries.wasm");
+    await runner.load("./output/project-queries.wasm");
     console.log("✓ Module loaded successfully\n");
   } catch (error) {
     console.error("✗ Failed to load WASM module:");

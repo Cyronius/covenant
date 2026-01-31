@@ -8,7 +8,7 @@
  * 4. LIMIT clause
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 interface TestResult {
   name: string;
@@ -33,7 +33,7 @@ async function main() {
   console.log("=== Comprehensive Query System Tests ===\n");
 
   const runner = new CovenantQueryRunner();
-  await runner.load("./examples/50-embedded-query-simple.wasm");
+  await runner.load("./output/embedded-query.wasm");
 
   const memory = (runner as any).memory;
 

@@ -1,0 +1,29 @@
+// JSON Building Example
+// Demonstrates struct construction
+
+snippet id="examples.json_build_response" kind="fn"
+
+signature
+  fn name="build_response"
+    param name="status" type="String"
+    param name="message" type="String"
+    returns type="ApiResponse"
+  end
+end
+
+body
+  // Build response struct
+  step id="s1" kind="construct"
+    type="ApiResponse"
+    field name="status" from="status"
+    field name="message" from="message"
+    as="response"
+  end
+
+  step id="s2" kind="return"
+    from="response"
+    as="_"
+  end
+end
+
+end

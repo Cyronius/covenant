@@ -314,19 +314,19 @@ end
 
 ## Examples
 
-### Example 50: Comprehensive Query Tests
+### Query System: Comprehensive Query Tests
 
 Tests data queries with WHERE, ORDER BY, and LIMIT clauses.
 
 ```bash
-cargo run -p covenant-cli -- compile examples/50-embedded-query-simple.cov \
-  --output examples/50-embedded-query-simple.wasm
-deno run --allow-read examples/50-test-comprehensive.ts
+cargo run -p covenant-cli -- compile examples/query-system/embedded-query.cov \
+  --output examples/query-system/output/embedded-query.wasm
+cd examples/query-system && deno run --allow-read test-embedded.ts
 ```
 
 **Files:**
-- [examples/50-embedded-query-simple.cov](../../examples/50-embedded-query-simple.cov) - Source with query functions
-- [examples/50-test-comprehensive.ts](../../examples/50-test-comprehensive.ts) - Comprehensive test suite (20 tests)
+- [examples/query-system/embedded-query.cov](../../examples/query-system/embedded-query.cov) - Source with query functions
+- [examples/query-system/test-embedded.ts](../../examples/query-system/test-embedded.ts) - Comprehensive test suite (20 tests)
 
 **Test coverage:**
 - `find_docs` - Find all data nodes
@@ -336,33 +336,33 @@ deno run --allow-read examples/50-test-comprehensive.ts
 - `find_all_sorted_by_kind` - ORDER BY kind (known bug)
 - `find_all_unsorted` - All nodes without sorting
 
-### Example 51: Symbol Metadata
+### Symbol Metadata
 
 Tests embedded symbol metadata including effects, requirements, and tests.
 
 ```bash
-cargo run -p covenant-cli -- compile examples/51-symbol-metadata-test.cov \
-  --output examples/51-symbol-metadata-test.wasm
-deno run --allow-read examples/51-test.ts
+cargo run -p covenant-cli -- compile examples/symbol-metadata/symbol-metadata.cov \
+  --output examples/symbol-metadata/output/symbol-metadata.wasm
+cd examples/symbol-metadata && deno run --allow-read test.ts
 ```
 
 **Files:**
-- [examples/51-symbol-metadata-test.cov](../../examples/51-symbol-metadata-test.cov) - Source with requirements and tests
-- [examples/51-test.ts](../../examples/51-test.ts) - Symbol metadata assertions
+- [examples/symbol-metadata/symbol-metadata.cov](../../examples/symbol-metadata/symbol-metadata.cov) - Source with requirements and tests
+- [examples/symbol-metadata/test.ts](../../examples/symbol-metadata/test.ts) - Symbol metadata assertions
 
-### Example 52: Relation Traversal
+### Relation Traversal
 
 Tests graph traversal with outgoing, incoming, and chained queries.
 
 ```bash
-cargo run -p covenant-cli -- compile examples/52-relation-traversal.cov \
-  --output examples/52-relation-traversal.wasm
-deno run --allow-read examples/52-test.ts
+cargo run -p covenant-cli -- compile examples/relation-traversal/relation-traversal.cov \
+  --output examples/relation-traversal/output/relation-traversal.wasm
+cd examples/relation-traversal && deno run --allow-read test.ts
 ```
 
 **Files:**
-- [examples/52-relation-traversal.cov](../../examples/52-relation-traversal.cov) - Source with hierarchical relations
-- [examples/52-test.ts](../../examples/52-test.ts) - Traversal test suite (11 tests)
+- [examples/relation-traversal/relation-traversal.cov](../../examples/relation-traversal/relation-traversal.cov) - Source with hierarchical relations
+- [examples/relation-traversal/test.ts](../../examples/relation-traversal/test.ts) - Traversal test suite (11 tests)
 
 **Test coverage:**
 - `get_children` - Outgoing relations (contains)
@@ -370,29 +370,29 @@ deno run --allow-read examples/52-test.ts
 - `get_grandchildren` - Multi-step traversal
 - `chain_traverse` - Traverse from query result
 
-### Example 20: Knowledge Base Traversal
+### Knowledge Base Traversal
 
 Knowledge graph with hierarchical structure and relations.
 
 ```bash
-deno run --allow-read examples/20-test.ts
+cd examples/knowledge-base && deno run --allow-read test.ts
 ```
 
 **Files:**
-- [examples/20-knowledge-base.cov](../../examples/20-knowledge-base.cov) - Source
-- [examples/20-test.ts](../../examples/20-test.ts) - Test script
+- [examples/knowledge-base/knowledge-base.cov](../../examples/knowledge-base/knowledge-base.cov) - Source
+- [examples/knowledge-base/test.ts](../../examples/knowledge-base/test.ts) - Test script
 
-### Example 14: Project Queries (Symbol Graph)
+### Project Queries (Symbol Graph)
 
 Demonstrates symbol graph queries.
 
 ```bash
-deno run --allow-read examples/14-test.ts
+cd examples/project-queries && deno run --allow-read test.ts
 ```
 
 **Files:**
-- [examples/14-project-queries.cov](../../examples/14-project-queries.cov) - Source
-- [examples/14-test.ts](../../examples/14-test.ts) - Test script
+- [examples/project-queries/project-queries.cov](../../examples/project-queries/project-queries.cov) - Source
+- [examples/project-queries/test.ts](../../examples/project-queries/test.ts) - Test script
 
 ## Compilation Flags
 
@@ -477,7 +477,7 @@ i64 = (ptr << 32) | count
 import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
 
 const runner = new CovenantQueryRunner();
-await runner.load("./examples/50-embedded-query-simple.wasm");
+await runner.load("./output/embedded-query.wasm");
 
 // Call a query function
 const result = runner.call("find_docs") as bigint;

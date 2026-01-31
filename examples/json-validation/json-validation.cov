@@ -1,0 +1,92 @@
+// JSON Validation Example
+// Demonstrates JSON validation and type checking
+
+snippet id="examples.json_validate" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="validate_and_process"
+    param name="input" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  // First check if valid JSON
+  step id="s1" kind="call"
+    fn="json.is_valid"
+    arg name="input" from="input"
+    as="is_valid"
+  end
+
+  step id="s2" kind="if"
+    condition="is_valid"
+    then
+      step id="s2a" kind="call"
+        fn="console.println"
+        arg name="msg" lit="Valid JSON"
+        as="_"
+      end
+    end
+    else
+      step id="s2b" kind="call"
+        fn="console.error"
+        arg name="msg" lit="Invalid JSON syntax"
+        as="_"
+      end
+    end
+    as="_"
+  end
+
+  step id="s3" kind="return"
+    variant type="Unit"
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_round_trip" kind="fn"
+
+signature
+  fn name="round_trip_test"
+    param name="json_str" type="String"
+    returns type="Bool"
+  end
+end
+
+body
+  // Parse
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="json_str"
+    as="parsed"
+  end
+
+  // Stringify
+  step id="s2" kind="call"
+    fn="json.stringify"
+    arg name="value" from="parsed"
+    as="stringified"
+  end
+
+  // Parse again
+  step id="s3" kind="call"
+    fn="json.parse"
+    arg name="input" from="stringified"
+    as="reparsed"
+  end
+
+  // Both parse operations should succeed for valid JSON
+  step id="s4" kind="return"
+    lit=true
+    as="_"
+  end
+end
+
+end

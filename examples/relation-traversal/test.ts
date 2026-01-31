@@ -9,7 +9,7 @@
  * 5. Chained traversal (chain_traverse)
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 interface TestResult {
   name: string;
@@ -34,7 +34,7 @@ async function main() {
   console.log("=== Relation Traversal Tests ===\n");
 
   const runner = new CovenantQueryRunner();
-  await runner.load("./examples/52-relation-traversal.wasm");
+  await runner.load("./output/relation-traversal.wasm");
 
   const memory = (runner as any).memory;
 

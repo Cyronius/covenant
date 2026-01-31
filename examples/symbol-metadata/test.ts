@@ -4,11 +4,11 @@
  * Tests that symbol metadata is correctly embedded in WASM modules via the
  * _cov_get_symbol_metadata export function.
  *
- * Run with: deno run --allow-read examples/51-test.ts
+ * Run with: deno run --allow-read test.ts
  */
 
 // Load the compiled WASM
-const wasmBytes = await Deno.readFile("./examples/51-symbol-metadata-test.wasm");
+const wasmBytes = await Deno.readFile("./output/symbol-metadata.wasm");
 const module = new WebAssembly.Module(wasmBytes);
 
 // Get the required imports from the module

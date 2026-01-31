@@ -95,26 +95,26 @@ Compile and run a Covenant program in one step:
 
 ```sh
 # Using the binary directly
-./target/release/covenant run examples/01-hello-world.cov
+./target/release/covenant run examples/hello-world/hello-world.cov
 
 # Or if installed
-covenant run examples/01-hello-world.cov
+covenant run examples/hello-world/hello-world.cov
 ```
 
 Other useful commands:
 
 ```sh
 # Parse and check for errors
-covenant check examples/01-hello-world.cov
+covenant check examples/hello-world/hello-world.cov
 
 # Show symbol information
-covenant info examples/01-hello-world.cov
+covenant info examples/hello-world/hello-world.cov
 
 # Query the codebase
-covenant query --query "select all from functions" examples/01-hello-world.cov 
+covenant query --query "select all from functions" examples/hello-world/hello-world.cov
 
 # Generate explanations
-covenant explain examples/01-hello-world.cov
+covenant explain examples/hello-world/hello-world.cov
 
 # Interactive REPL
 covenant repl

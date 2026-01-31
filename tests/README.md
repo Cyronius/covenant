@@ -29,12 +29,15 @@ cargo nextest run --profile ci              # CI profile with retries
 
 ## Adding New Examples
 
-Simply create a `.cov` file in the `examples/` directory - it will be automatically discovered and tested!
+Simply create a subdirectory in `examples/` with a `.cov` file - it will be automatically discovered and tested!
 
 **Example:**
 ```bash
-# Create a new example
-touch examples/21-my-feature.cov
+# Create a new example directory
+mkdir -p examples/my-feature/output
+
+# Create the example file
+touch examples/my-feature/my-feature.cov
 
 # Edit the file with your Covenant code
 # ...

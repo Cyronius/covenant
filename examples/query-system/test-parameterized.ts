@@ -1,22 +1,22 @@
 /**
- * Test 70: Parameterized Query Tests
+ * Parameterized Query Tests
  *
  * Tests runtime string parameters in query functions.
  *
- * Usage:
- *   cargo run -p covenant-cli -- compile examples/70-parameterized-query.cov -o examples/70-parameterized-query.wasm
- *   deno run --allow-read examples/70-test.ts
+ * Usage (from examples/query-system/):
+ *   covenant compile parameterized-query.cov -o output/parameterized-query.wasm
+ *   deno run --allow-read test-parameterized.ts
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 const runner = new CovenantQueryRunner();
 
-console.log("=== Test 70: Parameterized Queries ===\n");
+console.log("=== Parameterized Query Tests ===\n");
 
 // Load the compiled WASM module
 try {
-  await runner.load("./examples/70-parameterized-query.wasm");
+  await runner.load("./output/parameterized-query.wasm");
   console.log("WASM module loaded successfully\n");
 } catch (e) {
   console.error("Failed to load WASM:", e);

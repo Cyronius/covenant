@@ -2,21 +2,33 @@ use covenant_parser::parse;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Discover all .cov files in the examples/ directory
+/// Discover all .cov files in the examples/ directory (recursively)
 fn discover_examples() -> Vec<PathBuf> {
     let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples");
 
-    fs::read_dir(&examples_dir)
-        .expect("Failed to read examples directory")
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                == Some("cov")
-        })
-        .collect()
+    discover_cov_files_recursive(&examples_dir)
+}
+
+/// Recursively discover all .cov files in a directory
+fn discover_cov_files_recursive(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                // Skip output directories
+                if path.file_name().and_then(|n| n.to_str()) != Some("output") {
+                    files.extend(discover_cov_files_recursive(&path));
+                }
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("cov") {
+                files.push(path);
+            }
+        }
+    }
+
+    files
 }
 
 /// Discover all .cov files in the runtime/std/*/tests/ directories

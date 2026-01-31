@@ -9,7 +9,7 @@
  * 3. Traversal from query results may not work yet (chain_traverse pattern)
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 interface TestResult {
   name: string;
@@ -35,7 +35,7 @@ async function main() {
   console.log("Testing embedded query capabilities against 6 documentation nodes.\n");
 
   const runner = new CovenantQueryRunner();
-  await runner.load("./examples/60-rag-query.wasm");
+  await runner.load("./output/rag-query.wasm");
 
   const memory = (runner as any).memory;
 

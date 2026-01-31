@@ -3,12 +3,12 @@
 # Build script for query examples
 #
 # This script compiles the query example programs to WASM:
-# - Example 14: Project queries (symbol graph)
-# - Example 20: Knowledge base traversal
-# - Example 50: Simple embedded query
-# - Example 51: Symbol metadata embedding
-# - Example 52: Relation traversal
-# - Example 53: Performance benchmark
+# - project-queries: Symbol graph queries
+# - knowledge-base: Knowledge base traversal
+# - query-system: Embedded queries, RAG, parameterized queries
+# - symbol-metadata: Symbol metadata embedding
+# - relation-traversal: Relation traversal
+# - query-performance-benchmark: Performance benchmark
 
 set -e  # Exit on error
 
@@ -29,12 +29,12 @@ COVENANT="./target/release/covenant"
 
 # Helper function to compile an example
 compile_example() {
-    local example_num=$1
-    local example_name=$2
-    local input="./examples/${example_num}-${example_name}.cov"
-    local output="./examples/${example_num}-${example_name}.wasm"
+    local dir=$1
+    local name=$2
+    local input="./examples/${dir}/${name}.cov"
+    local output="./examples/${dir}/output/${name}.wasm"
 
-    echo -e "${YELLOW}Compiling Example ${example_num}: ${example_name}${NC}"
+    echo -e "${YELLOW}Compiling ${dir}/${name}${NC}"
     echo "  Input:  $input"
     echo "  Output: $output"
 
@@ -42,6 +42,9 @@ compile_example() {
         echo -e "${RED}  ✗ Input file not found${NC}"
         return 1
     fi
+
+    # Ensure output directory exists
+    mkdir -p "$(dirname "$output")"
 
     if $COVENANT compile "$input" --output "$output" --target deno; then
         local size=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null)
@@ -53,24 +56,28 @@ compile_example() {
 }
 
 # Compile examples
-compile_example "14" "project-queries" || true
-compile_example "20" "knowledge-base" || true
-compile_example "50" "embedded-query-simple" || true
-compile_example "51" "symbol-metadata-test" || true
-compile_example "52" "relation-traversal" || true
-compile_example "53" "performance-benchmark" || true
+compile_example "project-queries" "project-queries" || true
+compile_example "knowledge-base" "knowledge-base" || true
+compile_example "query-system" "embedded-query" || true
+compile_example "query-system" "rag-query" || true
+compile_example "query-system" "parameterized-query" || true
+compile_example "symbol-metadata" "symbol-metadata" || true
+compile_example "relation-traversal" "relation-traversal" || true
+compile_example "query-performance-benchmark" "performance-benchmark" || true
 
 echo -e "${GREEN}=== Build Complete ===${NC}\n"
 
 # List generated files
 echo "Generated WASM files:"
-ls -lh ./examples/*.wasm 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'  || echo "  (none)"
+find ./examples -name "*.wasm" -exec ls -lh {} \; 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'  || echo "  (none)"
 echo ""
 
 echo "To run tests:"
-echo "  deno run --allow-read examples/14-test.ts"
-echo "  deno run --allow-read examples/20-test.ts"
-echo "  deno run --allow-read examples/50-test-comprehensive.ts"
-echo "  deno run --allow-read examples/51-test.ts"
-echo "  deno run --allow-read examples/52-test.ts"
-echo "  deno run --allow-read examples/53-benchmark.ts"
+echo "  cd examples/project-queries && deno run --allow-read test.ts"
+echo "  cd examples/knowledge-base && deno run --allow-read test.ts"
+echo "  cd examples/query-system && deno run --allow-read test-embedded.ts"
+echo "  cd examples/query-system && deno run --allow-read test-rag.ts"
+echo "  cd examples/query-system && deno run --allow-read test-parameterized.ts"
+echo "  cd examples/symbol-metadata && deno run --allow-read test.ts"
+echo "  cd examples/relation-traversal && deno run --allow-read test.ts"
+echo "  cd examples/query-performance-benchmark && deno run --allow-read benchmark.ts"

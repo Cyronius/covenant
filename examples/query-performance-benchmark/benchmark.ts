@@ -10,7 +10,7 @@
  * - 10,000 nodes: ~100ms (extrapolated, within target)
  */
 
-import { CovenantQueryRunner } from "../runtime/host/query-runner.ts";
+import { CovenantQueryRunner } from "../../runtime/host/query-runner.ts";
 
 interface BenchmarkResult {
   name: string;
@@ -59,7 +59,7 @@ async function main() {
   console.log("=== Performance Benchmark: 100 Node Query System ===\n");
 
   const runner = new CovenantQueryRunner();
-  await runner.load("./examples/53-performance-benchmark.wasm");
+  await runner.load("./output/performance-benchmark.wasm");
 
   const memory = (runner as any).memory;
 

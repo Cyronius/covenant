@@ -1398,4 +1398,4 @@ end
 - [COMPILER.md](COMPILER.md) - Phase 4: Query Parameter Validation
 - [ERROR_CODES.md](ERROR_CODES.md) - Query error codes (E-QUERY-020 through E-QUERY-022)
 - [grammar.ebnf](grammar.ebnf) - Query syntax definition
-- [examples/16-database-dialects.cov](examples/16-database-dialects.cov) - Dialect examples
+- [examples/database-dialects/database-dialects.cov](examples/database-dialects/database-dialects.cov) - Dialect examples
