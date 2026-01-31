@@ -1,0 +1,229 @@
+// Effects - capability-based side effect tracking
+//
+// Covenant makes effects explicit in function signatures.
+// Effects propagate transitively through the call graph.
+
+// -----------------------------------------------------------------------------
+// SECTION 1: Multiple Effects - combining capabilities
+// -----------------------------------------------------------------------------
+
+snippet id="http.post" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="post"
+    param name="url" type="String"
+    param name="body" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+end
+
+
+snippet id="upload.upload_file" kind="fn"
+
+effects
+  effect console
+  effect filesystem
+  effect network
+end
+
+signature
+  fn name="upload_file"
+    param name="path" type="String"
+    param name="url" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+      type="HttpError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="console.println"
+    arg name="message" lit="Reading file..."
+    as="_"
+  end
+  step id="s2" kind="call"
+    fn="fs.read_file"
+    arg name="path" from="path"
+    as="content"
+  end
+  step id="s3" kind="call"
+    fn="console.println"
+    arg name="message" lit="Uploading..."
+    as="_"
+  end
+  step id="s4" kind="call"
+    fn="http.post"
+    arg name="url" from="url"
+    arg name="body" from="content"
+    as="response"
+  end
+  step id="s5" kind="bind"
+    field="body" of="response"
+    as="response_body"
+  end
+  step id="s6" kind="call"
+    fn="concat"
+    arg name="a" lit="Done: "
+    arg name="b" from="response_body"
+    as="message"
+  end
+  step id="s7" kind="call"
+    fn="console.println"
+    arg name="message" from="message"
+    as="_"
+  end
+end
+
+end
+
+// The function's effect set is the union of all declared effects.
+// Effects propagate transitively through the call graph.
+
+
+// -----------------------------------------------------------------------------
+// SECTION 2: Effect Granularity - mixed purity in a module
+// -----------------------------------------------------------------------------
+// Different snippets have different effect requirements.
+// Pure functions have no effects section.
+
+snippet id="format" kind="extern"
+
+signature
+  fn name="format"
+    param name="template" type="String"
+    param name="a" type="Any"
+    param name="b" type="Any"
+    param name="c" type="Any"
+    returns type="String"
+  end
+end
+
+end
+
+
+snippet id="now" kind="extern"
+
+effects
+  effect datetime
+end
+
+signature
+  fn name="now"
+    returns type="Date"
+  end
+end
+
+end
+
+
+snippet id="utils.format_date" kind="fn"
+
+// Pure - no effects section
+
+signature
+  fn name="format_date"
+    param name="d" type="Date"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="bind"
+    field="year" of="d"
+    as="year"
+  end
+  step id="s2" kind="bind"
+    field="month" of="d"
+    as="month"
+  end
+  step id="s3" kind="bind"
+    field="day" of="d"
+    as="day"
+  end
+  step id="s4" kind="call"
+    fn="format"
+    arg name="template" lit="{}-{}-{}"
+    arg name="a" from="year"
+    arg name="b" from="month"
+    arg name="c" from="day"
+    as="result"
+  end
+  step id="s5" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="utils.log_date" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="log_date"
+    param name="d" type="Date"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="utils.format_date"
+    arg name="d" from="d"
+    as="formatted"
+  end
+  step id="s2" kind="call"
+    fn="console.println"
+    arg name="message" from="formatted"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="utils.fetch_current_date" kind="fn"
+
+effects
+  effect datetime
+end
+
+signature
+  fn name="fetch_current_date"
+    returns type="Date"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="now"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+// Effect inheritance summary:
+//   format_date        -> no effects (pure)
+//   log_date           -> effect console
+//   fetch_current_date -> effect datetime

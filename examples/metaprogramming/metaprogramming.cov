@@ -1,0 +1,356 @@
+// Metaprogramming - AST as a queryable, mutable database
+//
+// Covenant treats source code as data. The symbol graph is computed by the
+// compiler and can be queried at runtime. With effect meta, you can also
+// modify the AST (changes serialize back to .cov files).
+//
+// All metaprogramming requires: effect meta
+
+// =============================================================================
+// SECTION 1: Project Queries (Read-Only Introspection)
+// =============================================================================
+// Queries run against the symbol graph, not external databases.
+// Use target="project" to access functions, types, requirements, etc.
+
+snippet id="meta.find_db_functions" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_db_functions"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      contains field="effects" lit="database"
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_callers" kind="fn"
+
+// Uses bidirectional refs computed by the compiler
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_callers"
+    param name="fn_name" type="String"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select field="called_by"
+    from="functions"
+    where
+      equals field="name" var="fn_name"
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_dead_code" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_dead_code"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_urls" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_urls"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="literals"
+    where
+      and
+        equals field="type" lit="String"
+        matches field="value" lit="https?://.*"
+      end
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_untested_requirements" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_untested_requirements"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="requirements"
+    where
+      equals field="covered_by" lit=[]
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// =============================================================================
+// SECTION 2: AST Mutations (CRUD on Source Code)
+// =============================================================================
+// These operations modify the symbol graph, which serializes back to .cov files.
+// The host runtime can refuse to grant effect meta to untrusted code.
+
+// Extern stub for list search
+snippet id="find" kind="extern"
+signature
+  fn name="find"
+    param name="list" type="Any"
+    param name="pred" type="Any"
+    returns type="Any"
+  end
+end
+end
+
+
+snippet id="refactor.rename_function" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="rename_function"
+    param name="old_name" type="String"
+    param name="new_name" type="String"
+    returns union
+      type="Unit"
+      type="MetaError"
+    end
+  end
+end
+
+body
+  // Update the function declaration
+  step id="s1" kind="update"
+    target="project.functions"
+    set field="name" from="new_name"
+    where
+      equals field="name" var="old_name"
+    end
+    as="_"
+  end
+
+  // Update all call sites (bidirectional refs make this easy)
+  step id="s2" kind="update"
+    target="project.call_expressions"
+    set field="callee" from="new_name"
+    where
+      equals field="callee" var="old_name"
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="refactor.add_getter" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="add_getter"
+    param name="struct_name" type="String"
+    param name="field_name" type="String"
+    returns union
+      type="Unit"
+      type="MetaError"
+    end
+  end
+end
+
+body
+  // Find the struct
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="structs"
+    where
+      equals field="name" var="struct_name"
+    end
+    limit=1
+    as="struct_info"
+  end
+
+  // Find the field
+  step id="s2" kind="call"
+    fn="find"
+    arg name="list" from="struct_info"
+    arg name="pred" from="field_name"
+    as="field"
+  end
+
+  // Build getter name
+  step id="s3" kind="call"
+    fn="concat"
+    arg name="a" lit="get_"
+    arg name="b" from="field_name"
+    as="getter_name"
+  end
+
+  // Insert the getter function
+  step id="s4" kind="insert"
+    into="project.functions"
+    set field="name" from="getter_name"
+    set field="params" from="field_name"
+    set field="return_type" from="field"
+    set field="module" from="struct_info"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="refactor.prune_dead_code" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="prune_dead_code"
+    returns union
+      type="Int"
+      type="MetaError"
+    end
+  end
+end
+
+body
+  // Find dead code
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="dead"
+  end
+
+  // Delete dead code
+  step id="s2" kind="delete"
+    from="project.functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="_"
+  end
+
+  // Return count
+  step id="s3" kind="call"
+    fn="len"
+    arg name="list" from="dead"
+    as="count"
+  end
+  step id="s4" kind="return"
+    from="count"
+    as="_"
+  end
+end
+
+end
