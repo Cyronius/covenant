@@ -204,6 +204,8 @@ Effects propagate transitively—if A calls B, A inherits B's effects. The compi
 
 ## The Query System
 
+Covenant treats codebases as queryable databases—the foundation for retrieval-augmented generation (RAG). Documents and code can be ingested, indexed, and searched at runtime through compiled WASM modules. See the [query system example](examples/query-system/README.md) for a complete pipeline from document ingestion to interactive querying.
+
 Query your codebase like a database. Find all functions that use the database:
 
 ```covenant
@@ -260,7 +262,7 @@ Covenant compiles to WASM and runs on multiple platforms:
 | **Deno** (default) | `run.deno.ts` — loads WASM, provides I/O | `covenant run <file>` |
 | **Node.js** (fallback) | `run.mjs` — same interface, Node APIs | `covenant run <file>` |
 | **Browser** | Host loader — fetch WASM, link modules | Import via `loader.ts` |
-| **WASI** | WASI 0.2 Components | `--target=wasi` |
+| **WASI** | WASI 0.2 Components | `--target=wasi` (planned) |
 
 `covenant run` compiles and executes in one step, using Deno by default with Node.js as fallback.
 
