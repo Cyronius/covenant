@@ -10,7 +10,7 @@
 // Extern stubs representing the callback dispatch mechanism.
 // These act as placeholders for the higher-order function call pattern.
 
-snippet id="f" kind="extern"
+snippet id="callback.f" kind="extern"
 signature
   fn name="f"
     param name="x" type="Any"
@@ -19,7 +19,7 @@ signature
 end
 end
 
-snippet id="pred" kind="extern"
+snippet id="callback.pred" kind="extern"
 signature
   fn name="pred"
     param name="x" type="Any"
@@ -28,7 +28,7 @@ signature
 end
 end
 
-snippet id="push" kind="extern"
+snippet id="list.push" kind="extern"
 signature
   fn name="push"
     param name="list" type="List<Any>"
@@ -59,12 +59,12 @@ body
   step id="s2" kind="for"
     var="item" in="list"
     step id="s2a" kind="call"
-      fn="f"
+      fn="callback.f"
       arg name="x" from="item"
       as="mapped"
     end
     step id="s2b" kind="call"
-      fn="push"
+      fn="list.push"
       arg name="list" from="result"
       arg name="item" from="mapped"
       as="_"
@@ -101,7 +101,7 @@ body
   step id="s2" kind="for"
     var="item" in="list"
     step id="s2a" kind="call"
-      fn="pred"
+      fn="callback.pred"
       arg name="x" from="item"
       as="keep"
     end
@@ -109,7 +109,7 @@ body
       condition="keep"
       then
         step id="s2c" kind="call"
-          fn="push"
+          fn="list.push"
           arg name="list" from="result"
           arg name="item" from="item"
           as="_"

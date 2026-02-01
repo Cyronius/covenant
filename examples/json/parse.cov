@@ -1,15 +1,93 @@
 // JSON Parsing Example
 // Demonstrates parsing JSON and extracting data
 
+// ============================================================
+// External JSON Functions (from std.json)
+// ============================================================
+
+snippet id="json.parse" kind="extern-abstract"
+
+signature
+  fn name="parse"
+    param name="input" type="String"
+    returns union
+      type="Json"
+      type="JsonError"
+    end
+  end
+end
+
+metadata
+  description="Parse JSON string into Json type. Returns JsonError on invalid syntax."
+  cost_hint=moderate
+end
+
+end
+
+
+snippet id="json.get_field" kind="extern-abstract"
+
+signature
+  fn name="get_field"
+    param name="obj" type="Json"
+    param name="key" type="String"
+    returns type="Json" optional
+  end
+end
+
+metadata
+  description="Extract field from JSON object. Returns none if not an object or key missing."
+end
+
+end
+
+
+snippet id="json.as_string" kind="extern-abstract"
+
+signature
+  fn name="as_string"
+    param name="value" type="Json"
+    returns type="String" optional
+  end
+end
+
+metadata
+  description="Extract string value from Json::String variant. Returns none for other types."
+end
+
+end
+
+
+snippet id="json.get_index" kind="extern-abstract"
+
+signature
+  fn name="get_index"
+    param name="arr" type="Json"
+    param name="index" type="Int"
+    returns type="Json" optional
+  end
+end
+
+metadata
+  description="Extract element from JSON array. Returns none if not an array or index out of bounds."
+end
+
+end
+
+
+// ============================================================
+// Example Functions
+// ============================================================
+
 snippet id="examples.json_parse" kind="fn"
+
+// Note: Returns String on success, JsonError on failure.
+// Using Any return type for simplified example.
 
 signature
   fn name="parse_user_data"
     param name="json_str" type="String"
-    returns union
-      type="String"
-      type="JsonError"
-    end
+    returns type="Any"
   end
 end
 
@@ -24,17 +102,17 @@ body
   // Handle parse result
   step id="s2" kind="match"
     on="result"
-    case variant type="JsonError"
+    case variant type="JsonError" bindings=("err")
       step id="s2a" kind="return"
-        from="result"
+        from="err"
         as="_"
       end
     end
-    case variant type="Json"
+    case variant type="Json" bindings=("json_val")
       // Extract name field
       step id="s2b" kind="call"
         fn="json.get_field"
-        arg name="obj" from="result"
+        arg name="obj" from="json_val"
         arg name="key" lit="name"
         as="name_field"
       end
@@ -76,10 +154,13 @@ end
 
 snippet id="examples.json_parse_nested" kind="fn"
 
+// Note: This example demonstrates JSON navigation without full error handling.
+// In production code, you would match on the union return from json.parse.
+
 signature
   fn name="parse_nested_data"
     param name="json_str" type="String"
-    returns type="String" optional
+    returns type="Any"
   end
 end
 
@@ -130,10 +211,13 @@ end
 
 snippet id="examples.json_parse_array" kind="fn"
 
+// Note: This example demonstrates array access without full error handling.
+// In production code, you would match on the union return from json.parse.
+
 signature
   fn name="parse_array_data"
     param name="json_str" type="String"
-    returns type="String" optional
+    returns type="Any"
   end
 end
 

@@ -6,7 +6,7 @@
 // - Union return types for error handling
 // - How effects propagate from called functions
 
-snippet id="to_uppercase" kind="extern"
+snippet id="text.to_uppercase" kind="extern"
 
 signature
   fn name="to_uppercase"
@@ -51,7 +51,7 @@ body
   // Step 2: Transform the content (pure string operation).
   // to_uppercase is a pure function - no effects needed.
   step id="s2" kind="call"
-    fn="to_uppercase"
+    fn="text.to_uppercase"
     arg name="s" from="content"
     as="upper"
   end

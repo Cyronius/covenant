@@ -33,7 +33,7 @@ end
 end
 
 
-snippet id="find_config_line" kind="extern"
+snippet id="text.find_config_line" kind="extern"
 
 signature
   fn name="find_config_line"
@@ -46,7 +46,7 @@ end
 end
 
 
-snippet id="parse_int" kind="extern"
+snippet id="text.parse_int" kind="extern"
 
 signature
   fn name="parse_int"
@@ -78,7 +78,7 @@ end
 body
   // Find host line
   step id="s1" kind="call"
-    fn="find_config_line"
+    fn="text.find_config_line"
     arg name="input" from="input"
     arg name="prefix" lit="host="
     as="host_result"
@@ -104,7 +104,7 @@ body
 
   // Find port line
   step id="s3" kind="call"
-    fn="find_config_line"
+    fn="text.find_config_line"
     arg name="input" from="input"
     arg name="prefix" lit="port="
     as="port_str_result"
@@ -130,7 +130,7 @@ body
 
   // Parse port as int
   step id="s5" kind="call"
-    fn="parse_int"
+    fn="text.parse_int"
     arg name="s" from="port_str"
     as="port_parse_result"
     handle
@@ -184,7 +184,7 @@ body
 
   // Find debug (with default)
   step id="s11" kind="call"
-    fn="find_config_line"
+    fn="text.find_config_line"
     arg name="input" from="input"
     arg name="prefix" lit="debug="
     as="debug_result"

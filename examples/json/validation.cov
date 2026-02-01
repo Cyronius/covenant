@@ -1,6 +1,68 @@
 // JSON Validation Example
 // Demonstrates JSON validation and type checking
 
+// ============================================================
+// External JSON Functions (from std.json)
+// ============================================================
+
+snippet id="json.is_valid" kind="extern-abstract"
+
+signature
+  fn name="is_valid"
+    param name="input" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string is valid JSON without parsing. Returns true if valid."
+  cost_hint=cheap
+end
+
+end
+
+
+snippet id="json.parse" kind="extern-abstract"
+
+signature
+  fn name="parse"
+    param name="input" type="String"
+    returns union
+      type="Json"
+      type="JsonError"
+    end
+  end
+end
+
+metadata
+  description="Parse JSON string into Json type. Returns JsonError on invalid syntax."
+  cost_hint=moderate
+end
+
+end
+
+
+snippet id="json.stringify" kind="extern-abstract"
+
+signature
+  fn name="stringify"
+    param name="value" type="Json"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Serialize Json value to compact JSON string"
+  cost_hint=cheap
+end
+
+end
+
+
+// ============================================================
+// Example Functions
+// ============================================================
+
 snippet id="examples.json_validate" kind="fn"
 
 effects
@@ -27,14 +89,14 @@ body
     then
       step id="s2a" kind="call"
         fn="console.println"
-        arg name="msg" lit="Valid JSON"
+        arg name="message" lit="Valid JSON"
         as="_"
       end
     end
     else
       step id="s2b" kind="call"
         fn="console.error"
-        arg name="msg" lit="Invalid JSON syntax"
+        arg name="message" lit="Invalid JSON syntax"
         as="_"
       end
     end

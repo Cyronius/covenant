@@ -26,7 +26,7 @@ end
 end
 
 
-snippet id="listen" kind="extern"
+snippet id="server.listen" kind="extern"
 
 effects
   effect http_server
@@ -42,7 +42,7 @@ end
 end
 
 
-snippet id="requests" kind="extern"
+snippet id="server.requests" kind="extern"
 
 effects
   effect http_server
@@ -58,7 +58,7 @@ end
 end
 
 
-snippet id="respond" kind="extern"
+snippet id="server.respond" kind="extern"
 
 effects
   effect http_server
@@ -188,7 +188,7 @@ end
 
 body
   step id="s1" kind="call"
-    fn="listen"
+    fn="server.listen"
     arg name="port" lit=8080
     as="server"
   end
@@ -198,7 +198,7 @@ body
     as="_"
   end
   step id="s3" kind="call"
-    fn="requests"
+    fn="server.requests"
     arg name="server" from="server"
     as="request_stream"
   end
@@ -210,7 +210,7 @@ body
       as="response"
     end
     step id="s4b" kind="call"
-      fn="respond"
+      fn="server.respond"
       arg name="req" from="req"
       arg name="response" from="response"
       as="_"
